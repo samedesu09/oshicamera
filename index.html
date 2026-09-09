@@ -33,7 +33,7 @@
     background-color: #00ff00; display: none;
   }
 
-  /* 画面全体のドラッグ判定用レイヤー */
+  /* ドラッグ検知用レイヤー */
   #touch-layer {
     position: absolute; top: 0; left: 0; width: 100vw; height: 100dvh;
     z-index: 10; touch-action: none; cursor: grab;
@@ -47,7 +47,7 @@
     display: none; z-index: 5; pointer-events: none;
   }
 
-  /* 床影＆壁影 (専用レイヤーに分離して四角い枠バグを完全回避) */
+  /* ★影レイヤー (Canvasで作った純黒の画像をセットする) */
   #floor-shadow-img, #wall-shadow-img {
     position: absolute; bottom: 0; left: 0; width: 100%; height: 100%;
     pointer-events: none; display: none;
@@ -59,7 +59,6 @@
   .main-img-wrapper {
     position: relative; width: 100%; height: 100%;
     overflow: hidden; pointer-events: none; z-index: 2;
-    /* ★四角い枠バグを防ぐためのレイヤー分離魔法 */
     transform: translateZ(0); 
     isolation: isolate;
   }
@@ -75,7 +74,7 @@
     transition: opacity 0.2s;
   }
 
-  /* 背景用の環境光グラデーション */
+  /* 背景用環境光グラデーション */
   #bg-lighting-overlay {
     position: absolute; top: 0; left: 0; width: 100%; height: 100%;
     pointer-events: none; mix-blend-mode: overlay; opacity: 0;
@@ -174,7 +173,6 @@
   .panel-title { font-size: 0.85rem; font-weight: bold; letter-spacing: 0.1em; color: #fff; }
   .close-btn { background: none; border: none; color: #aaa; font-size: 1.4rem; cursor: pointer; padding: 0 8px; }
 
-  /* モード切替・設定ボタンスタイル */
   .menu-section-title { font-size: 0.65rem; color: #8a8190; letter-spacing: 0.05em; font-weight: bold; margin-top: 6px; }
   .menu-item-btn {
     width: 100%; padding: 10px 12px; border-radius: 8px; background: rgba(255,255,255,0.06);
@@ -236,11 +234,10 @@
   <div id="bg-lighting-overlay"></div>
 </div>
 
-<!-- ドラッグ検知用レイヤー（全画面） -->
 <div id="touch-layer"></div>
 
 <div id="overlay-container">
-  <!-- ★影を別々の画像レイヤーに完全分離！ -->
+  <!-- 影専用の黒シルエット画像 -->
   <img id="floor-shadow-img" src="" alt="floor-shadow">
   <img id="wall-shadow-img" src="" alt="wall-shadow">
   
@@ -252,12 +249,10 @@
 
 <div id="flash"></div>
 
-<!-- ファイル読み込み・カラー設定用 -->
 <input type="file" id="image-loader" accept="image/png, image/jpeg, image/gif" style="display: none;">
 <input type="file" id="bg-loader" accept="image/png, image/jpeg, image/webp" style="display: none;">
 <input type="color" id="color-picker" style="display: none;" value="#00ff00">
 
-<!-- 下部コントロールバー -->
 <div class="bottom-bar">
   <div class="quick-adjust-panel" id="quick-panel">
     <div class="quick-label-row">
@@ -278,7 +273,6 @@
   <button class="menu-toggle-btn" onclick="toggleMenu()">⚙️</button>
 </div>
 
-<!-- 右側メニュー -->
 <div class="side-panel" id="side-menu">
   <div class="panel-header">
     <div class="panel-title">STUDIO CONTROLS</div>
@@ -305,7 +299,7 @@
       <button class="tab-btn" id="tab-btn-bg" onclick="switchTab('bg')">🌆 背景調整</button>
     </div>
 
-    <!-- 🌟 推し調整タブ -->
+    <!-- 推し調整タブ -->
     <div class="tab-content is-active" id="tab-content-oshi">
       <div class="menu-section-title">IMAGE (ベース画像)</div>
       <button class="menu-item-btn" onclick="selectControl('size')">SIZE (大きさ)<span id="badge-size">100%</span></button>
@@ -338,7 +332,7 @@
       <button class="menu-item-btn" onclick="selectControl('wsh-op')">OPACITY (濃さ)<span id="badge-wsh-op">50%</span></button>
     </div>
 
-    <!-- 🌆 背景調整タブ -->
+    <!-- 背景調整タブ -->
     <div class="tab-content" id="tab-content-bg">
       <div class="menu-section-title">BACKGROUND (背景の調整)</div>
       <button class="menu-item-btn" onclick="selectControl('bg-zoom')">🔍 ZOOM (倍率)<span id="badge-bg-zoom">1.0x</span></button>
@@ -347,7 +341,6 @@
       
       <div class="menu-section-title" style="color: #d580ff; margin-top: 15px;">GLOBAL LIGHTING (光と影の全同期)</div>
       <button class="menu-item-btn purple-item" onclick="selectControl('gjoy')">🌍 DIRECTION & SYNC (全連動)<span>🕹️</span></button>
-      <p style="font-size: 0.7rem; color: #aaa; margin-top: 8px;">💡 ヒント: 背景調整タブを選んでいる時は、画面をスワイプすると背景の位置を動かせるよ！</p>
     </div>
 
   </div>
@@ -364,8 +357,10 @@
   const mainImg = document.getElementById('main-overlay-img');
   const lightOverlay = document.getElementById('lighting-overlay');
   const bgLightOverlay = document.getElementById('bg-lighting-overlay');
+  
+  // 影用レイヤー
   const floorImg = document.getElementById('floor-shadow-img');
-  const wallShadowImg = document.getElementById('wall-shadow-img'); // 追加！
+  const wallShadowImg = document.getElementById('wall-shadow-img');
   
   const fileInput = document.getElementById('image-loader');
   const bgInput = document.getElementById('bg-loader');
@@ -414,8 +409,13 @@
     state.bgMode = mode;
     const btnCam = document.getElementById('btn-bg-cam'), btnImg = document.getElementById('btn-bg-img'), btnCol = document.getElementById('btn-bg-col');
     const chooseBg = document.getElementById('btn-choose-bg'), chooseCol = document.getElementById('btn-choose-col');
-    btnCam.classList.toggle('active', mode === 'camera'); btnImg.classList.toggle('active', mode === 'image'); btnCol.classList.toggle('active', mode === 'color');
-    chooseBg.style.display = mode === 'image' ? 'block' : 'none'; chooseCol.style.display = mode === 'color' ? 'block' : 'none';
+
+    btnCam.classList.toggle('active', mode === 'camera');
+    btnImg.classList.toggle('active', mode === 'image');
+    btnCol.classList.toggle('active', mode === 'color');
+
+    chooseBg.style.display = mode === 'image' ? 'block' : 'none';
+    chooseCol.style.display = mode === 'color' ? 'block' : 'none';
 
     if (mode === 'camera') {
       bgImg.style.display = 'none'; bgColorPreview.style.display = 'none'; video.style.display = 'block'; startCamera();
@@ -478,31 +478,51 @@
     if (cameraStream) return;
     try { cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false }); video.srcObject = cameraStream; } catch (err) { alert("カメラ起動失敗: " + err.message); }
   }
-  function stopCamera() { if (cameraStream) { cameraStream.getTracks().forEach(track => track.stop()); cameraStream = null; video.srcObject = null; } }
+  function stopCamera() { if (cameraStream) { cameraStream.getTracks().forEach(t => t.stop()); cameraStream = null; video.srcObject = null; } }
 
   window.addEventListener('load', () => { startCamera(); });
 
+  // ★画像読み込み時に【完全な黒のシルエット画像】を生成してバグを根絶する！
   fileInput.addEventListener('change', (e) => {
     const file = e.target.files[0]; if (!file) return;
     const reader = new FileReader();
     reader.onload = (event) => {
-      mainImg.src = event.target.result;
-      floorImg.src = event.target.result;
-      wallShadowImg.src = event.target.result; // ★壁影用もセット！
-      
-      overlayContainer.style.display = 'block';
-      document.getElementById('studio-controls').style.display = 'flex';
-      
-      mainImg.onload = () => {
+      const tempImg = new Image();
+      tempImg.onload = () => {
+        mainImg.src = tempImg.src;
+
+        // 【最強のバグ回避策】Canvasで推しの形をした「真っ黒な画像」を生成する！
+        const shadowCanvas = document.createElement('canvas');
+        shadowCanvas.width = tempImg.naturalWidth;
+        shadowCanvas.height = tempImg.naturalHeight;
+        const sCtx = shadowCanvas.getContext('2d');
+        sCtx.drawImage(tempImg, 0, 0);
+        sCtx.globalCompositeOperation = 'source-in'; // 画像の不透明部分だけを残す
+        sCtx.fillStyle = '#000000'; // 真っ黒で塗りつぶす
+        sCtx.fillRect(0, 0, shadowCanvas.width, shadowCanvas.height);
+
+        // 生成した純黒画像を影専用レイヤーにセット
+        const shadowSrc = shadowCanvas.toDataURL('image/png');
+        floorImg.src = shadowSrc;
+        wallShadowImg.src = shadowSrc;
+
+        overlayContainer.style.display = 'block';
+        document.getElementById('studio-controls').style.display = 'flex';
+        
         const initW = window.innerWidth * 0.45; 
-        overlayContainer.style.width = initW + 'px'; overlayContainer.style.height = (mainImg.naturalHeight * (initW / mainImg.naturalWidth)) + 'px';
+        overlayContainer.style.width = initW + 'px';
+        overlayContainer.style.height = (tempImg.naturalHeight * (initW / tempImg.naturalWidth)) + 'px';
+        
         state.oshiX = window.innerWidth / 2; state.oshiY = window.innerHeight / 2;
         
-        mainWrapper.style.webkitMaskImage = `url(${mainImg.src})`; mainWrapper.style.webkitMaskSize = '100% 100%';
-        mainWrapper.style.maskImage = `url(${mainImg.src})`; mainWrapper.style.maskSize = '100% 100%';
+        mainWrapper.style.webkitMaskImage = `url(${mainImg.src})`;
+        mainWrapper.style.webkitMaskSize = '100% 100%';
+        mainWrapper.style.maskImage = `url(${mainImg.src})`;
+        mainWrapper.style.maskSize = '100% 100%';
 
         switchTab('oshi'); updateStyles();
       };
+      tempImg.src = event.target.result;
     };
     reader.readAsDataURL(file);
   });
@@ -528,14 +548,26 @@
     
     mainImg.style.filter = `brightness(${state.bright}%)`;
     
-    // ★壁影の処理を完全に独立レイヤーに分離！（四角い枠バグ撲滅）
+    // ★壁影：CSSのbrightness(0)を削除！すでに真っ黒な画像なのでOpacityとBlurだけでOK
     if (state.wallShadow) {
       wallShadowImg.style.display = 'block';
       const blur = Math.sqrt(state.wallShadowX**2 + state.wallShadowY**2) * 0.8;
       wallShadowImg.style.transform = `translate(${state.wallShadowX}px, ${state.wallShadowY}px)`;
-      wallShadowImg.style.filter = `brightness(0) blur(${blur}px) opacity(${state.wallShadowOp / 100})`;
+      wallShadowImg.style.filter = `blur(${blur}px)`;
+      wallShadowImg.style.opacity = state.wallShadowOp / 100;
     } else {
       wallShadowImg.style.display = 'none';
+    }
+
+    // ★床影：CSSのbrightness(0)を削除！
+    if (state.floorShadow) {
+      floorImg.style.display = 'block';
+      const lenScale = (state.floorShadowJoyY / 26) * 1.5; const skewDeg = (state.floorShadowJoyX / 26) * 60;
+      floorImg.style.transform = `skewX(${skewDeg}deg) scaleY(${lenScale})`;
+      floorImg.style.filter = `blur(${state.floorShadowBlur}px)`;
+      floorImg.style.opacity = state.floorShadowOp / 100;
+    } else {
+      floorImg.style.display = 'none';
     }
 
     if (state.lighting) {
@@ -546,15 +578,6 @@
       lightOverlay.style.background = `linear-gradient(${angleDeg}deg, rgba(255,255,255,${intensity * 0.9}) 0%, rgba(255,255,255,${intensity * 0.4}) ${whiteStop}%, rgba(0,0,0,0) 50%, rgba(0,0,0,${intensity * 0.5}) ${blackStop}%, rgba(0,0,0,${intensity * 0.9}) 100%)`;
     } else {
       lightOverlay.style.opacity = 0;
-    }
-
-    if (state.floorShadow) {
-      floorImg.style.display = 'block';
-      const lenScale = (state.floorShadowJoyY / 26) * 1.5; const skewDeg = (state.floorShadowJoyX / 26) * 60;
-      floorImg.style.transform = `skewX(${skewDeg}deg) scaleY(${lenScale})`;
-      floorImg.style.filter = `brightness(0) blur(${state.floorShadowBlur}px) opacity(${state.floorShadowOp / 100})`;
-    } else {
-      floorImg.style.display = 'none';
     }
   }
 
@@ -608,35 +631,58 @@
     const baseScale = parseFloat(overlayContainer.style.width) / origW;
     ctx.scale(baseScale * (state.size / 100), baseScale * (state.size / 100));
 
+    // ★床影描画 (すでに真っ黒な画像なのでbrightness処理不要)
     if (state.floorShadow) {
-      ctx.save(); ctx.globalAlpha = state.floorShadowOp / 100; ctx.filter = `brightness(0) blur(${state.floorShadowBlur}px)`;
-      ctx.translate(0, origH / 2); ctx.transform(1, 0, Math.tan((state.floorShadowJoyX / 26) * 60 * Math.PI / 180), (state.floorShadowJoyY / 26) * 1.5, 0, 0);
-      ctx.drawImage(mainImg, -origW / 2, -origH, origW, origH); ctx.restore();
-    }
-
-    // ★壁影のCanvas描画処理も独立レイヤーに分離
-    if (state.wallShadow) {
-      ctx.save(); ctx.globalAlpha = state.wallShadowOp / 100;
-      const blur = Math.sqrt(state.wallShadowX**2 + state.wallShadowY**2) * 0.8;
-      ctx.filter = `brightness(0) blur(${blur}px)`;
-      ctx.translate(state.wallShadowX, state.wallShadowY);
-      ctx.drawImage(mainImg, -origW / 2, -origH / 2, origW, origH);
+      ctx.save();
+      ctx.globalAlpha = state.floorShadowOp / 100;
+      ctx.filter = `blur(${state.floorShadowBlur}px)`;
+      ctx.translate(0, origH / 2);
+      ctx.transform(1, 0, Math.tan((state.floorShadowJoyX / 26) * 60 * Math.PI / 180), (state.floorShadowJoyY / 26) * 1.5, 0, 0);
+      ctx.drawImage(floorImg, -origW / 2, -origH, origW, origH);
       ctx.restore();
     }
 
-    const charCanvas = document.createElement('canvas'); charCanvas.width = origW; charCanvas.height = origH; const cCtx = charCanvas.getContext('2d');
-    cCtx.filter = `brightness(${state.bright}%)`; cCtx.drawImage(mainImg, 0, 0, origW, origH);
+    // ★壁影描画 (すでに真っ黒な画像)
+    if (state.wallShadow) {
+      ctx.save();
+      ctx.globalAlpha = state.wallShadowOp / 100;
+      const blur = Math.sqrt(state.wallShadowX**2 + state.wallShadowY**2) * 0.8;
+      ctx.filter = `blur(${blur}px)`;
+      ctx.translate(state.wallShadowX, state.wallShadowY);
+      ctx.drawImage(wallShadowImg, -origW / 2, -origH / 2, origW, origH);
+      ctx.restore();
+    }
+
+    const charCanvas = document.createElement('canvas');
+    charCanvas.width = origW; charCanvas.height = origH;
+    const cCtx = charCanvas.getContext('2d');
+
+    cCtx.filter = `brightness(${state.bright}%)`;
+    cCtx.drawImage(mainImg, 0, 0, origW, origH);
 
     if (state.lighting) {
-      const gradCanvas = document.createElement('canvas'); gradCanvas.width = origW; gradCanvas.height = origH; const gCtx = gradCanvas.getContext('2d');
-      gCtx.drawImage(mainImg, 0, 0, origW, origH); gCtx.globalCompositeOperation = 'source-in';
-      const angleRad = Math.atan2(state.lightJoyY, state.lightJoyX); const intensity = Math.min(1, Math.sqrt(state.lightJoyX**2 + state.lightJoyY**2) / 26);
+      const gradCanvas = document.createElement('canvas'); gradCanvas.width = origW; gradCanvas.height = origH;
+      const gCtx = gradCanvas.getContext('2d');
+      
+      gCtx.drawImage(mainImg, 0, 0, origW, origH);
+      gCtx.globalCompositeOperation = 'source-in';
+      
+      const angleRad = Math.atan2(state.lightJoyY, state.lightJoyX);
+      const intensity = Math.min(1, Math.sqrt(state.lightJoyX**2 + state.lightJoyY**2) / 26);
       const x1 = origW/2 - Math.cos(angleRad) * (origW / 2); const y1 = origH/2 - Math.sin(angleRad) * (origH / 2);
       const x2 = origW/2 + Math.cos(angleRad) * (origW / 2); const y2 = origH/2 + Math.sin(angleRad) * (origH / 2);
+
       const grad = gCtx.createLinearGradient(x1, y1, x2, y2);
       const whiteStop = Math.max(0.1, 0.6 - (state.lightSoftness * 0.005)); const blackStop = Math.min(0.95, 0.4 + (state.lightSoftness * 0.005));
-      grad.addColorStop(0, `rgba(255, 255, 255, ${intensity * 0.9})`); grad.addColorStop(whiteStop, `rgba(255, 255, 255, ${intensity * 0.4})`); grad.addColorStop(0.5, `rgba(0, 0, 0, 0)`); grad.addColorStop(blackStop, `rgba(0, 0, 0, ${intensity * 0.5})`); grad.addColorStop(1, `rgba(0, 0, 0, ${intensity * 0.9})`);
+
+      grad.addColorStop(0, `rgba(255, 255, 255, ${intensity * 0.9})`);
+      grad.addColorStop(whiteStop, `rgba(255, 255, 255, ${intensity * 0.4})`);
+      grad.addColorStop(0.5, `rgba(0, 0, 0, 0)`);
+      grad.addColorStop(blackStop, `rgba(0, 0, 0, ${intensity * 0.5})`);
+      grad.addColorStop(1, `rgba(0, 0, 0, ${intensity * 0.9})`);
+
       gCtx.fillStyle = grad; gCtx.fillRect(0, 0, origW, origH);
+
       cCtx.globalCompositeOperation = 'hard-light'; cCtx.drawImage(gradCanvas, 0, 0, origW, origH);
     }
     ctx.drawImage(charCanvas, -origW / 2, -origH / 2, origW, origH);
@@ -646,8 +692,8 @@
   async function takePhoto() {
     if (!mainImg.src || overlayContainer.style.display === 'none') { alert("まずは推し画像を読み込んでね！"); return; }
     if (state.bgMode === 'image' && (!bgImg.src || bgImg.src === window.location.href)) { alert("背景画像を選択してね！"); return; }
-    const flash = document.getElementById('flash'); flash.style.opacity = 1; setTimeout(() => { flash.style.opacity = 0; }, 120);
 
+    const flash = document.getElementById('flash'); flash.style.opacity = 1; setTimeout(() => { flash.style.opacity = 0; }, 120);
     const canvas = document.getElementById('capture-canvas'); const ctx = canvas.getContext('2d');
     const dpr = window.devicePixelRatio || 2; const vw = window.innerWidth; const vh = window.innerHeight;
     canvas.width = vw * dpr; canvas.height = vh * dpr; ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
