@@ -26,7 +26,6 @@
     position: absolute; top: 50%; left: 50%;
     transform: translate(-50%, -50%); /* 初期位置 */
     max-width: 80vw; display: none; z-index: 5;
-    /* ドラッグ中はこれをいじります */
     touch-action: none; cursor: grab;
     filter: drop-shadow(0 0 10px rgba(0,230,255,0.3));
   }
@@ -60,7 +59,7 @@
   .btn-pink { background: rgba(255, 42, 109, 0.15); border: 1px dashed #ff2a6d; color: #ff758c; }
   .btn-pink:hover { background: rgba(255, 42, 109, 0.3); box-shadow: 0 0 12px rgba(255, 42, 109, 0.5); }
   
-  /* シャッターボタン (ド派手なシアン) */
+  /* シャッターボタン */
   .btn-shutter {
     width: 100%; padding: 14px; background: rgba(0, 230, 255, 0.15); border: 1px solid #00e6ff; color: #00e6ff;
     font-size: 1.1rem; box-shadow: 0 0 15px rgba(0, 230, 255, 0.3);
@@ -70,7 +69,7 @@
   /* 合成用の非表示キャンバス */
   #capture-canvas { display: none; }
   
-  /* 画面フラッシュ（シャッター演出用） */
+  /* 画面フラッシュ */
   #flash {
     position: absolute; top: 0; left: 0; width: 100%; height: 100%;
     background: #fff; z-index: 100; opacity: 0; pointer-events: none;
@@ -80,18 +79,11 @@
 </head>
 <body>
 
-<!-- カメラ映像 -->
 <video id="camera-preview" autoplay playsinline></video>
-
-<!-- 重ねる画像 -->
 <img id="overlay-img" src="" alt="overlay">
-
-<!-- シャッター時のフラッシュ演出 -->
 <div id="flash"></div>
-
 <input type="file" id="image-loader" accept="image/png, image/jpeg, image/gif" style="display: none;">
 
-<!-- コントロールパネル -->
 <div class="control-panel">
   <button class="btn btn-pink" onclick="document.getElementById('image-loader').click()">＋ 透過画像を読み込む</button>
   
@@ -108,7 +100,6 @@
   <button class="btn btn-shutter" onclick="takePhoto()">📸 撮影して保存</button>
 </div>
 
-<!-- 合成用キャンバス -->
 <canvas id="capture-canvas"></canvas>
 
 <script>
@@ -119,17 +110,22 @@
   const fileInput = document.getElementById('image-loader');
   
   // ==========================================
-  // 1. カメラの起動（背面カメラ優先）
+  // 1. カメラの起動（高画質化の指定を追加！）
   // ==========================================
   async function startCamera() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment' }, // 背面カメラ
+        video: { 
+          facingMode: 'environment',
+          // ★フルHD以上の高解像度をブラウザに要求！
+          width: { ideal: 1920 },
+          height: { ideal: 1080 }
+        },
         audio: false
       });
       video.srcObject = stream;
     } catch (err) {
-      alert("カメラの起動に失敗しました。カメラのアクセス許可を確認してください！\nエラー: " + err.message);
+      alert("カメラの起動に失敗しました。\nエラー: " + err.message);
     }
   }
   window.addEventListener('load', startCamera);
@@ -137,7 +133,7 @@
   // ==========================================
   // 2. 画像の読み込みと表示
   // ==========================================
-  let baseWidth = 0; // 読み込んだ画像の元の幅
+  let baseWidth = 0;
   
   fileInput.addEventListener('change', (e) => {
     const file = e.target.files[0];
@@ -148,17 +144,14 @@
       overlayImg.src = event.target.result;
       overlayImg.style.display = 'block';
       
-      // 画像ロード後に基本サイズを記憶してリセット
       overlayImg.onload = () => {
         baseWidth = overlayImg.naturalWidth;
-        // 画面幅の半分くらいを初期サイズにする
         const initialWidth = window.innerWidth * 0.5; 
         overlayImg.style.width = initialWidth + 'px';
-        sizeSlider.value = 100; // スライダーリセット
+        sizeSlider.value = 100;
         opacitySlider.value = 100;
         overlayImg.style.opacity = 1;
         
-        // 位置を真ん中にリセット
         overlayImg.style.left = '50%';
         overlayImg.style.top = '50%';
         overlayImg.style.transform = 'translate(-50%, -50%)';
@@ -168,27 +161,23 @@
   });
 
   // ==========================================
-  // 3. スライダー操作（サイズ・透明度）
+  // 3. スライダー操作
   // ==========================================
   sizeSlider.addEventListener('input', (e) => {
-    // 100を基準(1倍)として 0.1倍〜2倍 の間でスケール
     const scale = e.target.value / 100;
-    // 初期サイズ(画面幅の50%)をベースに拡大縮小
     overlayImg.style.width = (window.innerWidth * 0.5 * scale) + 'px';
   });
-
   opacitySlider.addEventListener('input', (e) => {
     overlayImg.style.opacity = e.target.value / 100;
   });
 
   // ==========================================
-  // 4. 画像のドラッグ（指で移動）処理
+  // 4. 画像のドラッグ操作
   // ==========================================
   let isDragging = false;
   let startX, startY;
   let initialLeft, initialTop;
 
-  // PC（マウス）＆ スマホ（タッチ）両対応
   function onDragStart(e) {
     if (e.target !== overlayImg) return;
     e.preventDefault();
@@ -197,46 +186,36 @@
     const clientX = e.touches ? e.touches[0].clientX : e.clientX;
     const clientY = e.touches ? e.touches[0].clientY : e.clientY;
     
-    startX = clientX;
-    startY = clientY;
+    startX = clientX; startY = clientY;
     
-    // 現在の座標を取得 (translateを解除してleft/topだけで制御するための計算)
     const rect = overlayImg.getBoundingClientRect();
     overlayImg.style.transform = 'none';
     overlayImg.style.left = rect.left + 'px';
     overlayImg.style.top = rect.top + 'px';
     
-    initialLeft = rect.left;
-    initialTop = rect.top;
+    initialLeft = rect.left; initialTop = rect.top;
   }
-
   function onDragMove(e) {
     if (!isDragging) return;
     e.preventDefault();
-    
     const clientX = e.touches ? e.touches[0].clientX : e.clientX;
     const clientY = e.touches ? e.touches[0].clientY : e.clientY;
     
-    const dx = clientX - startX;
-    const dy = clientY - startY;
-    
+    const dx = clientX - startX; const dy = clientY - startY;
     overlayImg.style.left = (initialLeft + dx) + 'px';
     overlayImg.style.top = (initialTop + dy) + 'px';
   }
-
   function onDragEnd() { isDragging = false; }
 
-  // イベントリスナー登録
   overlayImg.addEventListener('mousedown', onDragStart);
   window.addEventListener('mousemove', onDragMove);
   window.addEventListener('mouseup', onDragEnd);
-  
   overlayImg.addEventListener('touchstart', onDragStart, { passive: false });
   window.addEventListener('touchmove', onDragMove, { passive: false });
   window.addEventListener('touchend', onDragEnd);
 
   // ==========================================
-  // 5. 撮影（見たまま合成＆ダウンロード）
+  // 5. 撮影（高解像度での合成＆ダウンロード）
   // ==========================================
   function takePhoto() {
     if (!overlayImg.src || overlayImg.style.display === 'none') {
@@ -244,7 +223,6 @@
       return;
     }
 
-    // フラッシュ演出
     const flash = document.getElementById('flash');
     flash.style.opacity = 1;
     setTimeout(() => { flash.style.opacity = 0; }, 150);
@@ -252,46 +230,47 @@
     const canvas = document.getElementById('capture-canvas');
     const ctx = canvas.getContext('2d');
 
-    // 画面のサイズに合わせてキャンバスを作る
+    // ★スマホの高精細ディスプレイ（DPR）に合わせてキャンバスの画素数を跳ね上げる！
+    const dpr = window.devicePixelRatio || 2; // 最低でも2倍の解像度を確保
     const vw = window.innerWidth;
     const vh = window.innerHeight;
-    canvas.width = vw;
-    canvas.height = vh;
+    
+    canvas.width = vw * dpr;
+    canvas.height = vh * dpr;
 
-    // 1. カメラ映像を描画（object-fit: cover をシミュレート）
     const videoRatio = video.videoWidth / video.videoHeight;
     const screenRatio = vw / vh;
     let drawW, drawH, drawX, drawY;
 
     if (videoRatio > screenRatio) {
-      // 映像の方が横長 -> 左右をクロップ
       drawH = vh;
       drawW = vh * videoRatio;
       drawX = (vw - drawW) / 2;
       drawY = 0;
     } else {
-      // 映像の方が縦長 -> 上下をクロップ
       drawW = vw;
       drawH = vw / videoRatio;
       drawX = 0;
       drawY = (vh - drawH) / 2;
     }
-    // カメラの映像を背景として描く
-    ctx.drawImage(video, drawX, drawY, drawW, drawH);
+    
+    // カメラの映像を描画（DPR倍して高精細化）
+    ctx.drawImage(video, drawX * dpr, drawY * dpr, drawW * dpr, drawH * dpr);
 
-    // 2. 透過画像を重ねて描画
+    // 透過画像を重ねて描画（DPR倍して高精細化）
     const imgRect = overlayImg.getBoundingClientRect();
     ctx.globalAlpha = overlayImg.style.opacity || 1;
-    ctx.drawImage(overlayImg, imgRect.left, imgRect.top, imgRect.width, imgRect.height);
+    ctx.drawImage(overlayImg, imgRect.left * dpr, imgRect.top * dpr, imgRect.width * dpr, imgRect.height * dpr);
 
-    // 3. ダウンロード処理
-    const dataURL = canvas.toDataURL('image/jpeg', 0.95);
+    // 最高画質のJPEGとしてダウンロード
+    const dataURL = canvas.toDataURL('image/jpeg', 1.0);
     const link = document.createElement('a');
     link.href = dataURL;
-    // 日時をファイル名にする
+    
     const now = new Date();
     const timeStr = `${now.getFullYear()}${(now.getMonth()+1).toString().padStart(2,'0')}${now.getDate().toString().padStart(2,'0')}_${now.getHours()}${now.getMinutes()}${now.getSeconds()}`;
     link.download = `neon_camera_${timeStr}.jpg`;
+    
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
