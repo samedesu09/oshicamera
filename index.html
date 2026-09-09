@@ -20,7 +20,6 @@
     position: absolute; top: 0; left: 0; width: 100vw; height: 100dvh;
     z-index: 1; overflow: hidden;
   }
-  /* 背景用：カメラ＆静止画 */
   #camera-preview, #bg-image-preview {
     position: absolute; top: 50%; left: 50%;
     width: 100vw; height: 100dvh;
@@ -29,7 +28,6 @@
     transform-origin: center center;
   }
   #bg-image-preview { display: none; }
-  /* 背景用：単色カラー */
   #bg-color-preview {
     position: absolute; top: 0; left: 0; width: 100vw; height: 100dvh;
     background-color: #00ff00; display: none;
@@ -49,23 +47,28 @@
     display: none; z-index: 5; pointer-events: none;
   }
 
-  /* 床影 */
-  #floor-shadow-img {
+  /* 床影＆壁影 (専用レイヤーに分離して四角い枠バグを完全回避) */
+  #floor-shadow-img, #wall-shadow-img {
     position: absolute; bottom: 0; left: 0; width: 100%; height: 100%;
-    transform-origin: bottom center; pointer-events: none; display: none;
+    pointer-events: none; display: none;
   }
+  #floor-shadow-img { transform-origin: bottom center; }
+  #wall-shadow-img { transform-origin: center center; top: 0; }
   
-  /* メイン画像ラッパー (ライティング用マスク) */
+  /* メイン画像ラッパー */
   .main-img-wrapper {
     position: relative; width: 100%; height: 100%;
     overflow: hidden; pointer-events: none; z-index: 2;
+    /* ★四角い枠バグを防ぐためのレイヤー分離魔法 */
+    transform: translateZ(0); 
+    isolation: isolate;
   }
   #main-overlay-img {
     position: relative; width: 100%; height: 100%; display: block;
     pointer-events: none;
   }
 
-  /* ★ライティング用グラデーション (ハードライト合成) */
+  /* ライティング用グラデーション */
   #lighting-overlay {
     position: absolute; top: 0; left: 0; width: 100%; height: 100%;
     pointer-events: none; mix-blend-mode: hard-light; opacity: 0;
@@ -204,7 +207,7 @@
   .toggle-btn.active.pink { background: rgba(255, 42, 109, 0.2); border-color: #ff2a6d; color: #fff; }
   .toggle-btn.active.yellow { background: rgba(255, 215, 0, 0.2); border-color: #ffd700; color: #ffd700; }
 
-  /* タブUI（推し調整 vs 背景調整） */
+  /* タブUI */
   .tab-container {
     display: flex; background: rgba(0,0,0,0.5); border-radius: 8px; padding: 4px; margin-bottom: 8px;
   }
@@ -237,7 +240,10 @@
 <div id="touch-layer"></div>
 
 <div id="overlay-container">
+  <!-- ★影を別々の画像レイヤーに完全分離！ -->
   <img id="floor-shadow-img" src="" alt="floor-shadow">
+  <img id="wall-shadow-img" src="" alt="wall-shadow">
+  
   <div class="main-img-wrapper" id="main-wrapper">
     <img id="main-overlay-img" src="" alt="overlay">
     <div id="lighting-overlay"></div>
@@ -279,7 +285,6 @@
     <button class="close-btn" onclick="toggleMenu()">×</button>
   </div>
 
-  <!-- ① モード選択＆推し読み込みエリア -->
   <div class="menu-section-title">BACKGROUND MODE (背景)</div>
   <div class="toggle-row">
     <button class="toggle-btn blue active" id="btn-bg-cam" onclick="setBgMode('camera')">📷 カメラ</button>
@@ -293,7 +298,6 @@
 
   <button class="btn-action btn-upload" onclick="document.getElementById('image-loader').click()">＋ 推しを配置する</button>
 
-  <!-- ② スタジオ調整エリア（推しが読み込まれると表示） -->
   <div id="studio-controls" style="display: none; flex-direction: column; gap: 12px; margin-top: 10px;">
     
     <div class="tab-container">
@@ -361,6 +365,7 @@
   const lightOverlay = document.getElementById('lighting-overlay');
   const bgLightOverlay = document.getElementById('bg-lighting-overlay');
   const floorImg = document.getElementById('floor-shadow-img');
+  const wallShadowImg = document.getElementById('wall-shadow-img'); // 追加！
   
   const fileInput = document.getElementById('image-loader');
   const bgInput = document.getElementById('bg-loader');
@@ -369,14 +374,9 @@
 
   let cameraStream = null;
 
-  // アプリの状態
   let state = {
-    bgMode: 'camera', // 'camera', 'image', or 'color'
-    bgColor: '#00ff00', // 単色背景用カラー
-    editTarget: 'oshi',
-    
+    bgMode: 'camera', bgColor: '#00ff00', editTarget: 'oshi',
     bgZoom: 1.0, bgX: 0, bgY: 0, bgBlur: 0, bgBright: 100,
-
     size: 100, rotZ: 0, bright: 100, oshiX: 0, oshiY: 0,
     lighting: false, lightJoyX: 18, lightJoyY: -18, lightSoftness: 50,
     wallShadow: false, wallShadowOp: 50, wallShadowX: 15, wallShadowY: 15,
@@ -390,7 +390,6 @@
     'bg-zoom':    { name: 'BG ZOOM', min: 10, max: 40, step: 1, unit: 'x', div: 10, get: () => state.bgZoom * 10, set: v => state.bgZoom = v / 10 },
     'bg-blur':    { name: 'BG BLUR', min: 0, max: 30, step: 1, unit: 'px', div: 1, get: () => state.bgBlur, set: v => state.bgBlur = v },
     'bg-bright':  { name: 'BG BRIGHT', min: 0, max: 200, step: 1, unit: '%', div: 1, get: () => state.bgBright, set: v => state.bgBright = v },
-    
     'size':       { name: 'OSHI SIZE', min: 10, max: 250, step: 1, unit: '%', div: 1, get: () => state.size, set: v => state.size = v },
     'rot':        { name: 'ANGLE', min: -180, max: 180, step: 1, unit: '°', div: 1, get: () => state.rotZ, set: v => state.rotZ = v },
     'bright':     { name: 'BASE BRIGHT', min: 0, max: 200, step: 1, unit: '%', div: 1, get: () => state.bright, set: v => state.bright = v },
@@ -400,163 +399,109 @@
     'wsh-op':     { name: 'WALL OPAC', min: 0, max: 100, step: 1, unit: '%', div: 1, get: () => state.wallShadowOp, set: v => state.wallShadowOp = v }
   };
 
-  function toggleMenu() {
-    document.getElementById('side-menu').classList.toggle('is-open');
-  }
+  function toggleMenu() { document.getElementById('side-menu').classList.toggle('is-open'); }
 
   function switchTab(target) {
     state.editTarget = target;
     document.getElementById('tab-btn-oshi').classList.toggle('active', target === 'oshi');
     document.getElementById('tab-btn-bg').classList.toggle('active', target === 'bg');
-    
     document.getElementById('tab-content-oshi').classList.toggle('is-active', target === 'oshi');
     document.getElementById('tab-content-bg').classList.toggle('is-active', target === 'bg');
-    
     selectControl(target === 'oshi' ? 'size' : 'bg-zoom', true);
   }
 
   function setBgMode(mode) {
     state.bgMode = mode;
-    const btnCam = document.getElementById('btn-bg-cam');
-    const btnImg = document.getElementById('btn-bg-img');
-    const btnCol = document.getElementById('btn-bg-col');
-    const chooseBg = document.getElementById('btn-choose-bg');
-    const chooseCol = document.getElementById('btn-choose-col');
-
-    btnCam.classList.toggle('active', mode === 'camera');
-    btnImg.classList.toggle('active', mode === 'image');
-    btnCol.classList.toggle('active', mode === 'color');
-
-    chooseBg.style.display = mode === 'image' ? 'block' : 'none';
-    chooseCol.style.display = mode === 'color' ? 'block' : 'none';
+    const btnCam = document.getElementById('btn-bg-cam'), btnImg = document.getElementById('btn-bg-img'), btnCol = document.getElementById('btn-bg-col');
+    const chooseBg = document.getElementById('btn-choose-bg'), chooseCol = document.getElementById('btn-choose-col');
+    btnCam.classList.toggle('active', mode === 'camera'); btnImg.classList.toggle('active', mode === 'image'); btnCol.classList.toggle('active', mode === 'color');
+    chooseBg.style.display = mode === 'image' ? 'block' : 'none'; chooseCol.style.display = mode === 'color' ? 'block' : 'none';
 
     if (mode === 'camera') {
-      bgImg.style.display = 'none';
-      bgColorPreview.style.display = 'none';
-      video.style.display = 'block';
-      startCamera();
+      bgImg.style.display = 'none'; bgColorPreview.style.display = 'none'; video.style.display = 'block'; startCamera();
     } else if (mode === 'image') {
-      video.style.display = 'none';
-      bgColorPreview.style.display = 'none';
-      bgImg.style.display = 'block';
-      stopCamera();
+      video.style.display = 'none'; bgColorPreview.style.display = 'none'; bgImg.style.display = 'block'; stopCamera();
       if (!bgImg.src || bgImg.src === window.location.href) bgInput.click();
     } else {
-      video.style.display = 'none';
-      bgImg.style.display = 'none';
-      bgColorPreview.style.display = 'block';
-      stopCamera();
+      video.style.display = 'none'; bgImg.style.display = 'none'; bgColorPreview.style.display = 'block'; stopCamera();
     }
     updateStyles();
   }
 
   bgInput.addEventListener('change', (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => { bgImg.src = event.target.result; updateStyles(); };
-    reader.readAsDataURL(file);
+    const file = e.target.files[0]; if (!file) return;
+    const reader = new FileReader(); reader.onload = (event) => { bgImg.src = event.target.result; updateStyles(); }; reader.readAsDataURL(file);
   });
 
   colorPicker.addEventListener('input', (e) => {
-    state.bgColor = e.target.value;
-    bgColorPreview.style.backgroundColor = state.bgColor;
+    state.bgColor = e.target.value; bgColorPreview.style.backgroundColor = state.bgColor;
   });
 
   function selectControl(mode, keepMenuOpen = false) {
-    if (!keepMenuOpen) {
-      document.getElementById('side-menu').classList.remove('is-open');
-    }
+    if (!keepMenuOpen) document.getElementById('side-menu').classList.remove('is-open');
     activeMode = mode;
 
-    const qPanel = document.getElementById('quick-panel');
-    const qJoy = document.getElementById('quick-joy');
-    const qKnob = document.getElementById('quick-joy-knob');
-
-    if (mode === 'wjoy' || mode === 'fjoy' || mode === 'ljoy' || mode === 'gjoy') {
+    const qPanel = document.getElementById('quick-panel'), qJoy = document.getElementById('quick-joy'), qKnob = document.getElementById('quick-joy-knob');
+    if (['wjoy','fjoy','ljoy','gjoy'].includes(mode)) {
       qPanel.classList.remove('is-active'); qJoy.classList.add('is-active');
       qJoy.className = 'quick-joystick-wrap is-active'; qKnob.className = 'quick-joystick-knob';
 
       if (mode === 'fjoy') {
-        qJoy.classList.add('pink-theme'); qKnob.classList.add('pink-theme');
-        qKnob.style.transform = `translate(${state.floorShadowJoyX}px, ${state.floorShadowJoyY}px)`;
+        qJoy.classList.add('pink-theme'); qKnob.classList.add('pink-theme'); qKnob.style.transform = `translate(${state.floorShadowJoyX}px, ${state.floorShadowJoyY}px)`;
       } else if (mode === 'ljoy') {
-        qJoy.classList.add('yellow-theme'); qKnob.classList.add('yellow-theme');
-        qKnob.style.transform = `translate(${state.lightJoyX}px, ${state.lightJoyY}px)`;
+        qJoy.classList.add('yellow-theme'); qKnob.classList.add('yellow-theme'); qKnob.style.transform = `translate(${state.lightJoyX}px, ${state.lightJoyY}px)`;
       } else if (mode === 'gjoy') {
-        qJoy.classList.add('purple-theme'); qKnob.classList.add('purple-theme');
-        qKnob.style.transform = `translate(${state.globalLightX}px, ${state.globalLightY}px)`;
+        qJoy.classList.add('purple-theme'); qKnob.classList.add('purple-theme'); qKnob.style.transform = `translate(${state.globalLightX}px, ${state.globalLightY}px)`;
       } else {
         qKnob.style.transform = `translate(${state.wallShadowX / 1.5}px, ${state.wallShadowY / 1.5}px)`;
       }
     } else {
       qJoy.classList.remove('is-active'); qPanel.classList.add('is-active');
-      const conf = configs[mode];
-      document.getElementById('quick-label-name').textContent = conf.name;
-      const slider = document.getElementById('quick-slider');
-      slider.min = conf.min; slider.max = conf.max; slider.step = conf.step; slider.value = conf.get();
+      const conf = configs[mode]; document.getElementById('quick-label-name').textContent = conf.name;
+      const slider = document.getElementById('quick-slider'); slider.min = conf.min; slider.max = conf.max; slider.step = conf.step; slider.value = conf.get();
       updateQuickDisplay();
     }
   }
 
   function updateQuickDisplay() {
-    const conf = configs[activeMode];
-    if (!conf) return;
+    const conf = configs[activeMode]; if (!conf) return;
     const val = conf.div === 10 ? (conf.get() / 10).toFixed(1) : conf.get();
     document.getElementById('quick-val-text').textContent = val + conf.unit;
-    const badge = document.getElementById(`badge-${activeMode}`);
-    if (badge) badge.textContent = val + conf.unit;
+    const badge = document.getElementById(`badge-${activeMode}`); if (badge) badge.textContent = val + conf.unit;
   }
 
   document.getElementById('quick-slider').addEventListener('input', (e) => {
-    const conf = configs[activeMode];
-    if (!conf) return;
-    conf.set(parseFloat(e.target.value));
-    updateQuickDisplay();
-    updateStyles();
+    const conf = configs[activeMode]; if (!conf) return; conf.set(parseFloat(e.target.value)); updateQuickDisplay(); updateStyles();
   });
 
   async function startCamera() {
     if (cameraStream) return;
-    try {
-      cameraStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false
-      });
-      video.srcObject = cameraStream;
-    } catch (err) { alert("カメラ起動失敗: " + err.message); }
+    try { cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false }); video.srcObject = cameraStream; } catch (err) { alert("カメラ起動失敗: " + err.message); }
   }
-
-  function stopCamera() {
-    if (cameraStream) { cameraStream.getTracks().forEach(track => track.stop()); cameraStream = null; video.srcObject = null; }
-  }
+  function stopCamera() { if (cameraStream) { cameraStream.getTracks().forEach(track => track.stop()); cameraStream = null; video.srcObject = null; } }
 
   window.addEventListener('load', () => { startCamera(); });
 
   fileInput.addEventListener('change', (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+    const file = e.target.files[0]; if (!file) return;
     const reader = new FileReader();
     reader.onload = (event) => {
       mainImg.src = event.target.result;
       floorImg.src = event.target.result;
-      overlayContainer.style.display = 'block';
+      wallShadowImg.src = event.target.result; // ★壁影用もセット！
       
+      overlayContainer.style.display = 'block';
       document.getElementById('studio-controls').style.display = 'flex';
       
       mainImg.onload = () => {
         const initW = window.innerWidth * 0.45; 
-        overlayContainer.style.width = initW + 'px';
-        overlayContainer.style.height = (mainImg.naturalHeight * (initW / mainImg.naturalWidth)) + 'px';
-        
+        overlayContainer.style.width = initW + 'px'; overlayContainer.style.height = (mainImg.naturalHeight * (initW / mainImg.naturalWidth)) + 'px';
         state.oshiX = window.innerWidth / 2; state.oshiY = window.innerHeight / 2;
         
-        mainWrapper.style.webkitMaskImage = `url(${mainImg.src})`;
-        mainWrapper.style.webkitMaskSize = '100% 100%';
-        mainWrapper.style.maskImage = `url(${mainImg.src})`;
-        mainWrapper.style.maskSize = '100% 100%';
+        mainWrapper.style.webkitMaskImage = `url(${mainImg.src})`; mainWrapper.style.webkitMaskSize = '100% 100%';
+        mainWrapper.style.maskImage = `url(${mainImg.src})`; mainWrapper.style.maskSize = '100% 100%';
 
-        switchTab('oshi');
-        updateStyles();
+        switchTab('oshi'); updateStyles();
       };
     };
     reader.readAsDataURL(file);
@@ -569,54 +514,43 @@
     bgImg.style.transform = bgTransform; bgImg.style.filter = bgFilter;
     bgColorPreview.style.backgroundColor = state.bgColor;
 
-    // 背景全体への環境光グラデーション
     if (state.globalLightActive) {
       bgLightOverlay.style.opacity = 1;
-      const angleRad = Math.atan2(state.globalLightY, state.globalLightX);
-      const angleDeg = (angleRad * 180 / Math.PI) + 90;
+      const angleRad = Math.atan2(state.globalLightY, state.globalLightX); const angleDeg = (angleRad * 180 / Math.PI) + 90;
       const dist = Math.min(1, Math.sqrt(state.globalLightX**2 + state.globalLightY**2) / 26);
       bgLightOverlay.style.background = `linear-gradient(${angleDeg}deg, rgba(255,255,255,${dist*0.4}) 0%, rgba(0,0,0,0) 50%, rgba(0,0,0,${dist*0.5}) 100%)`;
     } else {
       bgLightOverlay.style.opacity = 0;
     }
 
-    overlayContainer.style.left = state.oshiX + 'px';
-    overlayContainer.style.top = state.oshiY + 'px';
+    overlayContainer.style.left = state.oshiX + 'px'; overlayContainer.style.top = state.oshiY + 'px';
     overlayContainer.style.transform = `translate(-50%, -50%) rotateZ(${state.rotZ}deg) scale(${state.size / 100})`;
     
     mainImg.style.filter = `brightness(${state.bright}%)`;
     
+    // ★壁影の処理を完全に独立レイヤーに分離！（四角い枠バグ撲滅）
     if (state.wallShadow) {
+      wallShadowImg.style.display = 'block';
       const blur = Math.sqrt(state.wallShadowX**2 + state.wallShadowY**2) * 0.8;
-      mainWrapper.style.filter = `drop-shadow(${state.wallShadowX}px ${state.wallShadowY}px ${blur}px rgba(0,0,0,${state.wallShadowOp/100}))`;
+      wallShadowImg.style.transform = `translate(${state.wallShadowX}px, ${state.wallShadowY}px)`;
+      wallShadowImg.style.filter = `brightness(0) blur(${blur}px) opacity(${state.wallShadowOp / 100})`;
     } else {
-      mainWrapper.style.filter = 'none';
+      wallShadowImg.style.display = 'none';
     }
 
     if (state.lighting) {
       lightOverlay.style.opacity = 1;
-      const angleRad = Math.atan2(state.lightJoyY, state.lightJoyX);
-      const angleDeg = (angleRad * 180 / Math.PI) + 90;
-      const dist = Math.sqrt(state.lightJoyX**2 + state.lightJoyY**2);
-      const intensity = Math.min(1, dist / 26);
-      
-      const whiteStop = Math.max(10, 60 - (state.lightSoftness * 0.5));
-      const blackStop = Math.min(95, 40 + (state.lightSoftness * 0.5));
-      
-      lightOverlay.style.background = `linear-gradient(${angleDeg}deg, 
-        rgba(255,255,255,${intensity * 0.9}) 0%, 
-        rgba(255,255,255,${intensity * 0.4}) ${whiteStop}%, 
-        rgba(0,0,0,0) 50%, 
-        rgba(0,0,0,${intensity * 0.5}) ${blackStop}%, 
-        rgba(0,0,0,${intensity * 0.9}) 100%)`;
+      const angleRad = Math.atan2(state.lightJoyY, state.lightJoyX); const angleDeg = (angleRad * 180 / Math.PI) + 90;
+      const dist = Math.sqrt(state.lightJoyX**2 + state.lightJoyY**2); const intensity = Math.min(1, dist / 26);
+      const whiteStop = Math.max(10, 60 - (state.lightSoftness * 0.5)); const blackStop = Math.min(95, 40 + (state.lightSoftness * 0.5));
+      lightOverlay.style.background = `linear-gradient(${angleDeg}deg, rgba(255,255,255,${intensity * 0.9}) 0%, rgba(255,255,255,${intensity * 0.4}) ${whiteStop}%, rgba(0,0,0,0) 50%, rgba(0,0,0,${intensity * 0.5}) ${blackStop}%, rgba(0,0,0,${intensity * 0.9}) 100%)`;
     } else {
       lightOverlay.style.opacity = 0;
     }
 
     if (state.floorShadow) {
       floorImg.style.display = 'block';
-      const lenScale = (state.floorShadowJoyY / 26) * 1.5;
-      const skewDeg = (state.floorShadowJoyX / 26) * 60;
+      const lenScale = (state.floorShadowJoyY / 26) * 1.5; const skewDeg = (state.floorShadowJoyX / 26) * 60;
       floorImg.style.transform = `skewX(${skewDeg}deg) scaleY(${lenScale})`;
       floorImg.style.filter = `brightness(0) blur(${state.floorShadowBlur}px) opacity(${state.floorShadowOp / 100})`;
     } else {
@@ -629,34 +563,19 @@
   function setFloorShadow(on) { state.floorShadow = on; document.getElementById('btn-fshadow-on').classList.toggle('active', on); document.getElementById('btn-fshadow-off').classList.toggle('active', !on); updateStyles(); }
 
   /* --- ジョイスティック --- */
-  const qJoy = document.getElementById('quick-joy');
-  const qKnob = document.getElementById('quick-joy-knob');
-  let joyActive = false;
-  const maxJoyR = 26;
-
+  const qJoy = document.getElementById('quick-joy'), qKnob = document.getElementById('quick-joy-knob');
+  let joyActive = false; const maxJoyR = 26;
   function handleJoy(e) {
-    if (!joyActive) return;
-    e.preventDefault();
-    const t = e.touches ? e.touches[0] : e;
-    const rect = qJoy.getBoundingClientRect();
-    let dx = t.clientX - (rect.left + rect.width / 2);
-    let dy = t.clientY - (rect.top + rect.height / 2);
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist > maxJoyR) { dx = (dx / dist) * maxJoyR; dy = (dy / dist) * maxJoyR; }
-    
+    if (!joyActive) return; e.preventDefault(); const t = e.touches ? e.touches[0] : e; const rect = qJoy.getBoundingClientRect();
+    let dx = t.clientX - (rect.left + rect.width / 2); let dy = t.clientY - (rect.top + rect.height / 2);
+    const dist = Math.sqrt(dx * dx + dy * dy); if (dist > maxJoyR) { dx = (dx / dist) * maxJoyR; dy = (dy / dist) * maxJoyR; }
     qKnob.style.transform = `translate(${dx}px, ${dy}px)`;
 
     if (activeMode === 'gjoy') {
-      state.globalLightActive = true;
-      state.globalLightX = dx; state.globalLightY = dy;
-      state.lightJoyX = dx; state.lightJoyY = dy;
-      state.floorShadowJoyX = -dx; state.floorShadowJoyY = -dy;
-      state.wallShadowX = -dx * 1.5; state.wallShadowY = -dy * 1.5;
-      if(!state.lighting) setLighting(true);
-      if(!state.floorShadow) setFloorShadow(true);
-      if(!state.wallShadow) setWallShadow(true);
-    } 
-    else {
+      state.globalLightActive = true; state.globalLightX = dx; state.globalLightY = dy;
+      state.lightJoyX = dx; state.lightJoyY = dy; state.floorShadowJoyX = -dx; state.floorShadowJoyY = -dy; state.wallShadowX = -dx * 1.5; state.wallShadowY = -dy * 1.5;
+      if(!state.lighting) setLighting(true); if(!state.floorShadow) setFloorShadow(true); if(!state.wallShadow) setWallShadow(true);
+    } else {
       state.globalLightActive = false;
       if (activeMode === 'fjoy') { state.floorShadowJoyX = dx; state.floorShadowJoyY = dy; }
       else if (activeMode === 'ljoy') { state.lightJoyX = dx; state.lightJoyY = dy; }
@@ -664,180 +583,98 @@
     }
     updateStyles();
   }
-  qJoy.addEventListener('mousedown', (e) => { joyActive = true; handleJoy(e); });
-  window.addEventListener('mousemove', handleJoy); window.addEventListener('mouseup', () => { joyActive = false; });
-  qJoy.addEventListener('touchstart', (e) => { joyActive = true; handleJoy(e); }, { passive: false });
-  window.addEventListener('touchmove', handleJoy, { passive: false }); window.addEventListener('touchend', () => { joyActive = false; });
+  qJoy.addEventListener('mousedown', (e) => { joyActive = true; handleJoy(e); }); window.addEventListener('mousemove', handleJoy); window.addEventListener('mouseup', () => { joyActive = false; });
+  qJoy.addEventListener('touchstart', (e) => { joyActive = true; handleJoy(e); }, { passive: false }); window.addEventListener('touchmove', handleJoy, { passive: false }); window.addEventListener('touchend', () => { joyActive = false; });
 
   /* --- タブ連動ドラッグ移動 --- */
   let isDragging = false, startX, startY, initBgX, initBgY, initOshiX, initOshiY;
   function onDragStart(e) {
     if (e.target.closest('.bottom-bar') || e.target.closest('.side-panel') || e.target.closest('.menu-toggle-btn')) return;
-    e.preventDefault(); isDragging = true;
-    const t = e.touches ? e.touches[0] : e;
-    startX = t.clientX; startY = t.clientY;
-    if (state.editTarget === 'bg') { initBgX = state.bgX; initBgY = state.bgY; }
-    else { initOshiX = state.oshiX; initOshiY = state.oshiY; }
+    e.preventDefault(); isDragging = true; const t = e.touches ? e.touches[0] : e; startX = t.clientX; startY = t.clientY;
+    if (state.editTarget === 'bg') { initBgX = state.bgX; initBgY = state.bgY; } else { initOshiX = state.oshiX; initOshiY = state.oshiY; }
   }
   function onDragMove(e) {
-    if (!isDragging) return;
-    e.preventDefault();
-    const t = e.touches ? e.touches[0] : e;
-    const dx = t.clientX - startX; const dy = t.clientY - startY;
-    
-    if (state.editTarget === 'bg') { state.bgX = initBgX + dx; state.bgY = initBgY + dy; }
-    else { state.oshiX = initOshiX + dx; state.oshiY = initOshiY + dy; }
-    updateStyles();
+    if (!isDragging) return; e.preventDefault(); const t = e.touches ? e.touches[0] : e; const dx = t.clientX - startX; const dy = t.clientY - startY;
+    if (state.editTarget === 'bg') { state.bgX = initBgX + dx; state.bgY = initBgY + dy; } else { state.oshiX = initOshiX + dx; state.oshiY = initOshiY + dy; } updateStyles();
   }
   function onDragEnd() { isDragging = false; }
-
   touchLayer.addEventListener('mousedown', onDragStart); window.addEventListener('mousemove', onDragMove); window.addEventListener('mouseup', onDragEnd);
   touchLayer.addEventListener('touchstart', onDragStart, { passive: false }); window.addEventListener('touchmove', onDragMove, { passive: false }); window.addEventListener('touchend', onDragEnd);
 
   /* --- キャラ＆影＆ライト Canvas描画ロジック --- */
   function drawOverlayToCtx(ctx) {
-    const origW = mainImg.naturalWidth;
-    const origH = mainImg.naturalHeight;
+    const origW = mainImg.naturalWidth; const origH = mainImg.naturalHeight;
     ctx.rotate(state.rotZ * Math.PI / 180);
     const baseScale = parseFloat(overlayContainer.style.width) / origW;
     ctx.scale(baseScale * (state.size / 100), baseScale * (state.size / 100));
 
-    // 床影
     if (state.floorShadow) {
-      ctx.save();
-      ctx.globalAlpha = state.floorShadowOp / 100;
-      ctx.filter = `brightness(0) blur(${state.floorShadowBlur}px)`;
-      ctx.translate(0, origH / 2);
-      ctx.transform(1, 0, Math.tan((state.floorShadowJoyX / 26) * 60 * Math.PI / 180), (state.floorShadowJoyY / 26) * 1.5, 0, 0);
-      ctx.drawImage(mainImg, -origW / 2, -origH, origW, origH);
+      ctx.save(); ctx.globalAlpha = state.floorShadowOp / 100; ctx.filter = `brightness(0) blur(${state.floorShadowBlur}px)`;
+      ctx.translate(0, origH / 2); ctx.transform(1, 0, Math.tan((state.floorShadowJoyX / 26) * 60 * Math.PI / 180), (state.floorShadowJoyY / 26) * 1.5, 0, 0);
+      ctx.drawImage(mainImg, -origW / 2, -origH, origW, origH); ctx.restore();
+    }
+
+    // ★壁影のCanvas描画処理も独立レイヤーに分離
+    if (state.wallShadow) {
+      ctx.save(); ctx.globalAlpha = state.wallShadowOp / 100;
+      const blur = Math.sqrt(state.wallShadowX**2 + state.wallShadowY**2) * 0.8;
+      ctx.filter = `brightness(0) blur(${blur}px)`;
+      ctx.translate(state.wallShadowX, state.wallShadowY);
+      ctx.drawImage(mainImg, -origW / 2, -origH / 2, origW, origH);
       ctx.restore();
     }
 
-    const charCanvas = document.createElement('canvas');
-    charCanvas.width = origW; charCanvas.height = origH;
-    const cCtx = charCanvas.getContext('2d');
-
-    cCtx.filter = `brightness(${state.bright}%)`;
-    cCtx.drawImage(mainImg, 0, 0, origW, origH);
+    const charCanvas = document.createElement('canvas'); charCanvas.width = origW; charCanvas.height = origH; const cCtx = charCanvas.getContext('2d');
+    cCtx.filter = `brightness(${state.bright}%)`; cCtx.drawImage(mainImg, 0, 0, origW, origH);
 
     if (state.lighting) {
-      const gradCanvas = document.createElement('canvas');
-      gradCanvas.width = origW; gradCanvas.height = origH;
-      const gCtx = gradCanvas.getContext('2d');
-      
-      gCtx.drawImage(mainImg, 0, 0, origW, origH);
-      gCtx.globalCompositeOperation = 'source-in';
-      
-      const angleRad = Math.atan2(state.lightJoyY, state.lightJoyX);
-      const intensity = Math.min(1, Math.sqrt(state.lightJoyX**2 + state.lightJoyY**2) / 26);
-      
-      const x1 = origW/2 - Math.cos(angleRad) * (origW / 2);
-      const y1 = origH/2 - Math.sin(angleRad) * (origH / 2);
-      const x2 = origW/2 + Math.cos(angleRad) * (origW / 2);
-      const y2 = origH/2 + Math.sin(angleRad) * (origH / 2);
-
+      const gradCanvas = document.createElement('canvas'); gradCanvas.width = origW; gradCanvas.height = origH; const gCtx = gradCanvas.getContext('2d');
+      gCtx.drawImage(mainImg, 0, 0, origW, origH); gCtx.globalCompositeOperation = 'source-in';
+      const angleRad = Math.atan2(state.lightJoyY, state.lightJoyX); const intensity = Math.min(1, Math.sqrt(state.lightJoyX**2 + state.lightJoyY**2) / 26);
+      const x1 = origW/2 - Math.cos(angleRad) * (origW / 2); const y1 = origH/2 - Math.sin(angleRad) * (origH / 2);
+      const x2 = origW/2 + Math.cos(angleRad) * (origW / 2); const y2 = origH/2 + Math.sin(angleRad) * (origH / 2);
       const grad = gCtx.createLinearGradient(x1, y1, x2, y2);
-      const whiteStop = Math.max(0.1, 0.6 - (state.lightSoftness * 0.005));
-      const blackStop = Math.min(0.95, 0.4 + (state.lightSoftness * 0.005));
-
-      grad.addColorStop(0, `rgba(255, 255, 255, ${intensity * 0.9})`);
-      grad.addColorStop(whiteStop, `rgba(255, 255, 255, ${intensity * 0.4})`);
-      grad.addColorStop(0.5, `rgba(0, 0, 0, 0)`);
-      grad.addColorStop(blackStop, `rgba(0, 0, 0, ${intensity * 0.5})`);
-      grad.addColorStop(1, `rgba(0, 0, 0, ${intensity * 0.9})`);
-
-      gCtx.fillStyle = grad;
-      gCtx.fillRect(0, 0, origW, origH);
-
-      cCtx.globalCompositeOperation = 'hard-light';
-      cCtx.drawImage(gradCanvas, 0, 0, origW, origH);
-    }
-
-    ctx.save();
-    if (state.wallShadow) {
-      const blur = Math.sqrt(state.wallShadowX**2 + state.wallShadowY**2) * 0.8;
-      ctx.filter = `drop-shadow(${state.wallShadowX}px ${state.wallShadowY}px ${blur}px rgba(0,0,0,${state.wallShadowOp/100}))`;
+      const whiteStop = Math.max(0.1, 0.6 - (state.lightSoftness * 0.005)); const blackStop = Math.min(0.95, 0.4 + (state.lightSoftness * 0.005));
+      grad.addColorStop(0, `rgba(255, 255, 255, ${intensity * 0.9})`); grad.addColorStop(whiteStop, `rgba(255, 255, 255, ${intensity * 0.4})`); grad.addColorStop(0.5, `rgba(0, 0, 0, 0)`); grad.addColorStop(blackStop, `rgba(0, 0, 0, ${intensity * 0.5})`); grad.addColorStop(1, `rgba(0, 0, 0, ${intensity * 0.9})`);
+      gCtx.fillStyle = grad; gCtx.fillRect(0, 0, origW, origH);
+      cCtx.globalCompositeOperation = 'hard-light'; cCtx.drawImage(gradCanvas, 0, 0, origW, origH);
     }
     ctx.drawImage(charCanvas, -origW / 2, -origH / 2, origW, origH);
-    ctx.restore();
   }
 
   /* --- 撮影＆保存 --- */
   async function takePhoto() {
-    if (!mainImg.src || overlayContainer.style.display === 'none') {
-      alert("まずは推し画像を読み込んでね！"); return;
-    }
-    if (state.bgMode === 'image' && (!bgImg.src || bgImg.src === window.location.href)) {
-      alert("背景画像を選択してね！"); return;
-    }
+    if (!mainImg.src || overlayContainer.style.display === 'none') { alert("まずは推し画像を読み込んでね！"); return; }
+    if (state.bgMode === 'image' && (!bgImg.src || bgImg.src === window.location.href)) { alert("背景画像を選択してね！"); return; }
+    const flash = document.getElementById('flash'); flash.style.opacity = 1; setTimeout(() => { flash.style.opacity = 0; }, 120);
 
-    const flash = document.getElementById('flash');
-    flash.style.opacity = 1; setTimeout(() => { flash.style.opacity = 0; }, 120);
+    const canvas = document.getElementById('capture-canvas'); const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 2; const vw = window.innerWidth; const vh = window.innerHeight;
+    canvas.width = vw * dpr; canvas.height = vh * dpr; ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
 
-    const canvas = document.getElementById('capture-canvas');
-    const ctx = canvas.getContext('2d');
-    const dpr = window.devicePixelRatio || 2;
-    const vw = window.innerWidth; const vh = window.innerHeight;
-    canvas.width = vw * dpr; canvas.height = vh * dpr;
-
-    ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
-
-    // 背景の描画
     if (state.bgMode === 'color') {
-      ctx.save();
-      ctx.fillStyle = state.bgColor;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.restore();
+      ctx.save(); ctx.fillStyle = state.bgColor; ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.restore();
     } else {
       const source = state.bgMode === 'camera' ? video : bgImg;
-      const srcW = state.bgMode === 'camera' ? video.videoWidth : bgImg.naturalWidth;
-      const srcH = state.bgMode === 'camera' ? video.videoHeight : bgImg.naturalHeight;
-
-      const sRatio = vw / vh; const srcRatio = srcW / srcH;
-      let dW, dH;
-      if (srcRatio > sRatio) { dH = vh; dW = vh * srcRatio; } else { dW = vw; dH = vw / srcRatio; }
-
-      ctx.save();
-      ctx.translate((vw * dpr) / 2 + state.bgX * dpr, (vh * dpr) / 2 + state.bgY * dpr);
-      ctx.scale(state.bgZoom, state.bgZoom);
-      ctx.filter = `brightness(${state.bgBright}%) blur(${state.bgBlur * dpr}px)`;
-      ctx.drawImage(source, (-dW / 2) * dpr, (-dH / 2) * dpr, dW * dpr, dH * dpr);
-      ctx.restore();
+      const srcW = state.bgMode === 'camera' ? video.videoWidth : bgImg.naturalWidth; const srcH = state.bgMode === 'camera' ? video.videoHeight : bgImg.naturalHeight;
+      const sRatio = vw / vh; const srcRatio = srcW / srcH; let dW, dH; if (srcRatio > sRatio) { dH = vh; dW = vh * srcRatio; } else { dW = vw; dH = vw / srcRatio; }
+      ctx.save(); ctx.translate((vw * dpr) / 2 + state.bgX * dpr, (vh * dpr) / 2 + state.bgY * dpr); ctx.scale(state.bgZoom, state.bgZoom); ctx.filter = `brightness(${state.bgBright}%) blur(${state.bgBlur * dpr}px)`; ctx.drawImage(source, (-dW / 2) * dpr, (-dH / 2) * dpr, dW * dpr, dH * dpr); ctx.restore();
     }
 
-    // グローバル環境光の書き込み
     if (state.globalLightActive) {
       ctx.save();
-      const angleRad = Math.atan2(state.globalLightY, state.globalLightX);
-      const dist = Math.min(1, Math.sqrt(state.globalLightX**2 + state.globalLightY**2) / 26);
-      const x1 = (vw * dpr)/2 - Math.cos(angleRad) * (vw * dpr)/2;
-      const y1 = (vh * dpr)/2 - Math.sin(angleRad) * (vh * dpr)/2;
-      const x2 = (vw * dpr)/2 + Math.cos(angleRad) * (vw * dpr)/2;
-      const y2 = (vh * dpr)/2 + Math.sin(angleRad) * (vh * dpr)/2;
-      const bgGrad = ctx.createLinearGradient(x1, y1, x2, y2);
-      bgGrad.addColorStop(0, `rgba(255,255,255,${dist*0.4})`);
-      bgGrad.addColorStop(0.5, `rgba(0,0,0,0)`);
-      bgGrad.addColorStop(1, `rgba(0,0,0,${dist*0.5})`);
-      ctx.fillStyle = bgGrad;
-      ctx.globalCompositeOperation = 'overlay';
-      ctx.fillRect(0, 0, vw*dpr, vh*dpr);
-      ctx.restore();
+      const angleRad = Math.atan2(state.globalLightY, state.globalLightX); const dist = Math.min(1, Math.sqrt(state.globalLightX**2 + state.globalLightY**2) / 26);
+      const x1 = (vw * dpr)/2 - Math.cos(angleRad) * (vw * dpr)/2; const y1 = (vh * dpr)/2 - Math.sin(angleRad) * (vh * dpr)/2;
+      const x2 = (vw * dpr)/2 + Math.cos(angleRad) * (vw * dpr)/2; const y2 = (vh * dpr)/2 + Math.sin(angleRad) * (vh * dpr)/2;
+      const bgGrad = ctx.createLinearGradient(x1, y1, x2, y2); bgGrad.addColorStop(0, `rgba(255,255,255,${dist*0.4})`); bgGrad.addColorStop(0.5, `rgba(0,0,0,0)`); bgGrad.addColorStop(1, `rgba(0,0,0,${dist*0.5})`);
+      ctx.fillStyle = bgGrad; ctx.globalCompositeOperation = 'overlay'; ctx.fillRect(0, 0, vw*dpr, vh*dpr); ctx.restore();
     }
 
-    ctx.save();
-    ctx.translate(state.oshiX * dpr, state.oshiY * dpr);
-    ctx.scale(dpr, dpr);
-    drawOverlayToCtx(ctx);
-    ctx.restore();
+    ctx.save(); ctx.translate(state.oshiX * dpr, state.oshiY * dpr); ctx.scale(dpr, dpr); drawOverlayToCtx(ctx); ctx.restore();
 
     canvas.toBlob(async (blob) => {
-      const fileName = `studio_photo_${Date.now()}.jpg`;
-      const file = new File([blob], fileName, { type: 'image/jpeg' });
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        try { await navigator.share({ files: [file], title: 'AR撮影写真' }); } catch (err) { if (err.name !== 'AbortError') alert("保存に失敗しました: " + err.message); }
-      } else {
-        const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = fileName; link.click();
-      }
+      const fileName = `studio_photo_${Date.now()}.jpg`; const file = new File([blob], fileName, { type: 'image/jpeg' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) { try { await navigator.share({ files: [file], title: 'AR撮影写真' }); } catch (err) { if (err.name !== 'AbortError') alert("保存に失敗しました: " + err.message); } } else { const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = fileName; link.click(); }
     }, 'image/jpeg', 0.95);
   }
 </script>
