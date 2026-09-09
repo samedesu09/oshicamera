@@ -28,10 +28,6 @@
     transform-origin: center center;
   }
   #bg-image-preview { display: none; }
-  #bg-color-preview {
-    position: absolute; top: 0; left: 0; width: 100vw; height: 100dvh;
-    background-color: #00ff00; display: none;
-  }
 
   /* ドラッグ検知用レイヤー */
   #touch-layer {
@@ -173,6 +169,7 @@
   .panel-title { font-size: 0.85rem; font-weight: bold; letter-spacing: 0.1em; color: #fff; }
   .close-btn { background: none; border: none; color: #aaa; font-size: 1.4rem; cursor: pointer; padding: 0 8px; }
 
+  /* メニュー項目スタイル */
   .menu-section-title { font-size: 0.65rem; color: #8a8190; letter-spacing: 0.05em; font-weight: bold; margin-top: 6px; }
   .menu-item-btn {
     width: 100%; padding: 10px 12px; border-radius: 8px; background: rgba(255,255,255,0.06);
@@ -181,10 +178,13 @@
   }
   .menu-item-btn:active { background: rgba(0, 230, 255, 0.2); border-color: #00e6ff; color: #00e6ff; }
   .menu-item-btn span { font-family: monospace; font-size: 0.7rem; color: #00e6ff; }
+  
   .menu-item-btn.pink-item:active { background: rgba(255, 42, 109, 0.2); border-color: #ff2a6d; color: #ff758c; }
   .menu-item-btn.pink-item span { color: #ff758c; }
+  
   .menu-item-btn.yellow-item:active { background: rgba(255, 215, 0, 0.2); border-color: #ffd700; color: #ffd700; }
   .menu-item-btn.yellow-item span { color: #ffd700; }
+
   .menu-item-btn.purple-item { border-color: rgba(170, 0, 255, 0.4); background: rgba(170, 0, 255, 0.1); }
   .menu-item-btn.purple-item:active { background: rgba(170, 0, 255, 0.3); border-color: #aa00ff; color: #d580ff; }
   .menu-item-btn.purple-item span { color: #d580ff; }
@@ -230,10 +230,10 @@
 <div id="bg-wrapper">
   <video id="camera-preview" autoplay playsinline></video>
   <img id="bg-image-preview" src="" alt="bg">
-  <div id="bg-color-preview"></div>
   <div id="bg-lighting-overlay"></div>
 </div>
 
+<!-- ドラッグ検知用レイヤー（全画面） -->
 <div id="touch-layer"></div>
 
 <div id="overlay-container">
@@ -249,10 +249,11 @@
 
 <div id="flash"></div>
 
+<!-- ファイル読み込み用 -->
 <input type="file" id="image-loader" accept="image/png, image/jpeg, image/gif" style="display: none;">
 <input type="file" id="bg-loader" accept="image/png, image/jpeg, image/webp" style="display: none;">
-<input type="color" id="color-picker" style="display: none;" value="#00ff00">
 
+<!-- 下部コントロールバー -->
 <div class="bottom-bar">
   <div class="quick-adjust-panel" id="quick-panel">
     <div class="quick-label-row">
@@ -273,6 +274,7 @@
   <button class="menu-toggle-btn" onclick="toggleMenu()">⚙️</button>
 </div>
 
+<!-- 右側メニュー -->
 <div class="side-panel" id="side-menu">
   <div class="panel-header">
     <div class="panel-title">STUDIO CONTROLS</div>
@@ -282,11 +284,9 @@
   <div class="menu-section-title">BACKGROUND MODE (背景)</div>
   <div class="toggle-row">
     <button class="toggle-btn blue active" id="btn-bg-cam" onclick="setBgMode('camera')">📷 カメラ</button>
-    <button class="toggle-btn blue" id="btn-bg-img" onclick="setBgMode('image')">🖼️ 画像</button>
-    <button class="toggle-btn blue" id="btn-bg-col" onclick="setBgMode('color')">🎨 単色</button>
+    <button class="toggle-btn blue" id="btn-bg-img" onclick="setBgMode('image')">🖼️ 背景選択</button>
   </div>
   <button class="btn-action btn-bg-select" id="btn-choose-bg" style="display: none;" onclick="document.getElementById('bg-loader').click()">📁 背景写真を選択</button>
-  <button class="btn-action btn-bg-select" id="btn-choose-col" style="display: none;" onclick="document.getElementById('color-picker').click()">🎨 背景カラーを変更</button>
   
   <hr style="border:0; border-top:1px dashed rgba(255,255,255,0.15); margin: 6px 0;">
 
@@ -351,7 +351,6 @@
 <script>
   const video = document.getElementById('camera-preview');
   const bgImg = document.getElementById('bg-image-preview');
-  const bgColorPreview = document.getElementById('bg-color-preview');
   const overlayContainer = document.getElementById('overlay-container');
   const mainWrapper = document.getElementById('main-wrapper');
   const mainImg = document.getElementById('main-overlay-img');
@@ -364,13 +363,12 @@
   
   const fileInput = document.getElementById('image-loader');
   const bgInput = document.getElementById('bg-loader');
-  const colorPicker = document.getElementById('color-picker');
   const touchLayer = document.getElementById('touch-layer');
 
   let cameraStream = null;
 
   let state = {
-    bgMode: 'camera', bgColor: '#00ff00', editTarget: 'oshi',
+    bgMode: 'camera', editTarget: 'oshi',
     bgZoom: 1.0, bgX: 0, bgY: 0, bgBlur: 0, bgBright: 100,
     size: 100, rotZ: 0, bright: 100, oshiX: 0, oshiY: 0,
     lighting: false, lightJoyX: 18, lightJoyY: -18, lightSoftness: 50,
@@ -407,23 +405,18 @@
 
   function setBgMode(mode) {
     state.bgMode = mode;
-    const btnCam = document.getElementById('btn-bg-cam'), btnImg = document.getElementById('btn-bg-img'), btnCol = document.getElementById('btn-bg-col');
-    const chooseBg = document.getElementById('btn-choose-bg'), chooseCol = document.getElementById('btn-choose-col');
+    const btnCam = document.getElementById('btn-bg-cam'), btnImg = document.getElementById('btn-bg-img');
+    const chooseBg = document.getElementById('btn-choose-bg');
 
     btnCam.classList.toggle('active', mode === 'camera');
     btnImg.classList.toggle('active', mode === 'image');
-    btnCol.classList.toggle('active', mode === 'color');
-
     chooseBg.style.display = mode === 'image' ? 'block' : 'none';
-    chooseCol.style.display = mode === 'color' ? 'block' : 'none';
 
     if (mode === 'camera') {
-      bgImg.style.display = 'none'; bgColorPreview.style.display = 'none'; video.style.display = 'block'; startCamera();
-    } else if (mode === 'image') {
-      video.style.display = 'none'; bgColorPreview.style.display = 'none'; bgImg.style.display = 'block'; stopCamera();
-      if (!bgImg.src || bgImg.src === window.location.href) bgInput.click();
+      bgImg.style.display = 'none'; video.style.display = 'block'; startCamera();
     } else {
-      video.style.display = 'none'; bgImg.style.display = 'none'; bgColorPreview.style.display = 'block'; stopCamera();
+      video.style.display = 'none'; bgImg.style.display = 'block'; stopCamera();
+      if (!bgImg.src || bgImg.src === window.location.href) bgInput.click();
     }
     updateStyles();
   }
@@ -431,10 +424,6 @@
   bgInput.addEventListener('change', (e) => {
     const file = e.target.files[0]; if (!file) return;
     const reader = new FileReader(); reader.onload = (event) => { bgImg.src = event.target.result; updateStyles(); }; reader.readAsDataURL(file);
-  });
-
-  colorPicker.addEventListener('input', (e) => {
-    state.bgColor = e.target.value; bgColorPreview.style.backgroundColor = state.bgColor;
   });
 
   function selectControl(mode, keepMenuOpen = false) {
@@ -482,7 +471,7 @@
 
   window.addEventListener('load', () => { startCamera(); });
 
-  // ★画像読み込み時に【完全な黒のシルエット画像】を生成してバグを根絶する！
+  // ★画像読み込み時に【完全な黒のシルエット画像】を生成して影バグを根絶！
   fileInput.addEventListener('change', (e) => {
     const file = e.target.files[0]; if (!file) return;
     const reader = new FileReader();
@@ -491,34 +480,23 @@
       tempImg.onload = () => {
         mainImg.src = tempImg.src;
 
-        // 【最強のバグ回避策】Canvasで推しの形をした「真っ黒な画像」を生成する！
         const shadowCanvas = document.createElement('canvas');
-        shadowCanvas.width = tempImg.naturalWidth;
-        shadowCanvas.height = tempImg.naturalHeight;
+        shadowCanvas.width = tempImg.naturalWidth; shadowCanvas.height = tempImg.naturalHeight;
         const sCtx = shadowCanvas.getContext('2d');
         sCtx.drawImage(tempImg, 0, 0);
-        sCtx.globalCompositeOperation = 'source-in'; // 画像の不透明部分だけを残す
-        sCtx.fillStyle = '#000000'; // 真っ黒で塗りつぶす
-        sCtx.fillRect(0, 0, shadowCanvas.width, shadowCanvas.height);
+        sCtx.globalCompositeOperation = 'source-in'; sCtx.fillStyle = '#000000'; sCtx.fillRect(0, 0, shadowCanvas.width, shadowCanvas.height);
 
-        // 生成した純黒画像を影専用レイヤーにセット
         const shadowSrc = shadowCanvas.toDataURL('image/png');
-        floorImg.src = shadowSrc;
-        wallShadowImg.src = shadowSrc;
+        floorImg.src = shadowSrc; wallShadowImg.src = shadowSrc;
 
-        overlayContainer.style.display = 'block';
-        document.getElementById('studio-controls').style.display = 'flex';
+        overlayContainer.style.display = 'block'; document.getElementById('studio-controls').style.display = 'flex';
         
         const initW = window.innerWidth * 0.45; 
-        overlayContainer.style.width = initW + 'px';
-        overlayContainer.style.height = (tempImg.naturalHeight * (initW / tempImg.naturalWidth)) + 'px';
-        
+        overlayContainer.style.width = initW + 'px'; overlayContainer.style.height = (tempImg.naturalHeight * (initW / tempImg.naturalWidth)) + 'px';
         state.oshiX = window.innerWidth / 2; state.oshiY = window.innerHeight / 2;
         
-        mainWrapper.style.webkitMaskImage = `url(${mainImg.src})`;
-        mainWrapper.style.webkitMaskSize = '100% 100%';
-        mainWrapper.style.maskImage = `url(${mainImg.src})`;
-        mainWrapper.style.maskSize = '100% 100%';
+        mainWrapper.style.webkitMaskImage = `url(${mainImg.src})`; mainWrapper.style.webkitMaskSize = '100% 100%';
+        mainWrapper.style.maskImage = `url(${mainImg.src})`; mainWrapper.style.maskSize = '100% 100%';
 
         switchTab('oshi'); updateStyles();
       };
@@ -532,7 +510,6 @@
     const bgFilter = `brightness(${state.bgBright}%) blur(${state.bgBlur}px)`;
     video.style.transform = bgTransform; video.style.filter = bgFilter;
     bgImg.style.transform = bgTransform; bgImg.style.filter = bgFilter;
-    bgColorPreview.style.backgroundColor = state.bgColor;
 
     if (state.globalLightActive) {
       bgLightOverlay.style.opacity = 1;
@@ -548,24 +525,20 @@
     
     mainImg.style.filter = `brightness(${state.bright}%)`;
     
-    // ★壁影：CSSのbrightness(0)を削除！すでに真っ黒な画像なのでOpacityとBlurだけでOK
     if (state.wallShadow) {
       wallShadowImg.style.display = 'block';
       const blur = Math.sqrt(state.wallShadowX**2 + state.wallShadowY**2) * 0.8;
       wallShadowImg.style.transform = `translate(${state.wallShadowX}px, ${state.wallShadowY}px)`;
-      wallShadowImg.style.filter = `blur(${blur}px)`;
-      wallShadowImg.style.opacity = state.wallShadowOp / 100;
+      wallShadowImg.style.filter = `blur(${blur}px)`; wallShadowImg.style.opacity = state.wallShadowOp / 100;
     } else {
       wallShadowImg.style.display = 'none';
     }
 
-    // ★床影：CSSのbrightness(0)を削除！
     if (state.floorShadow) {
       floorImg.style.display = 'block';
       const lenScale = (state.floorShadowJoyY / 26) * 1.5; const skewDeg = (state.floorShadowJoyX / 26) * 60;
       floorImg.style.transform = `skewX(${skewDeg}deg) scaleY(${lenScale})`;
-      floorImg.style.filter = `blur(${state.floorShadowBlur}px)`;
-      floorImg.style.opacity = state.floorShadowOp / 100;
+      floorImg.style.filter = `blur(${state.floorShadowBlur}px)`; floorImg.style.opacity = state.floorShadowOp / 100;
     } else {
       floorImg.style.display = 'none';
     }
@@ -631,58 +604,32 @@
     const baseScale = parseFloat(overlayContainer.style.width) / origW;
     ctx.scale(baseScale * (state.size / 100), baseScale * (state.size / 100));
 
-    // ★床影描画 (すでに真っ黒な画像なのでbrightness処理不要)
     if (state.floorShadow) {
-      ctx.save();
-      ctx.globalAlpha = state.floorShadowOp / 100;
-      ctx.filter = `blur(${state.floorShadowBlur}px)`;
-      ctx.translate(0, origH / 2);
-      ctx.transform(1, 0, Math.tan((state.floorShadowJoyX / 26) * 60 * Math.PI / 180), (state.floorShadowJoyY / 26) * 1.5, 0, 0);
-      ctx.drawImage(floorImg, -origW / 2, -origH, origW, origH);
-      ctx.restore();
+      ctx.save(); ctx.globalAlpha = state.floorShadowOp / 100; ctx.filter = `blur(${state.floorShadowBlur}px)`;
+      ctx.translate(0, origH / 2); ctx.transform(1, 0, Math.tan((state.floorShadowJoyX / 26) * 60 * Math.PI / 180), (state.floorShadowJoyY / 26) * 1.5, 0, 0);
+      ctx.drawImage(floorImg, -origW / 2, -origH, origW, origH); ctx.restore();
     }
 
-    // ★壁影描画 (すでに真っ黒な画像)
     if (state.wallShadow) {
-      ctx.save();
-      ctx.globalAlpha = state.wallShadowOp / 100;
+      ctx.save(); ctx.globalAlpha = state.wallShadowOp / 100;
       const blur = Math.sqrt(state.wallShadowX**2 + state.wallShadowY**2) * 0.8;
-      ctx.filter = `blur(${blur}px)`;
-      ctx.translate(state.wallShadowX, state.wallShadowY);
-      ctx.drawImage(wallShadowImg, -origW / 2, -origH / 2, origW, origH);
-      ctx.restore();
+      ctx.filter = `blur(${blur}px)`; ctx.translate(state.wallShadowX, state.wallShadowY);
+      ctx.drawImage(wallShadowImg, -origW / 2, -origH / 2, origW, origH); ctx.restore();
     }
 
-    const charCanvas = document.createElement('canvas');
-    charCanvas.width = origW; charCanvas.height = origH;
-    const cCtx = charCanvas.getContext('2d');
-
-    cCtx.filter = `brightness(${state.bright}%)`;
-    cCtx.drawImage(mainImg, 0, 0, origW, origH);
+    const charCanvas = document.createElement('canvas'); charCanvas.width = origW; charCanvas.height = origH; const cCtx = charCanvas.getContext('2d');
+    cCtx.filter = `brightness(${state.bright}%)`; cCtx.drawImage(mainImg, 0, 0, origW, origH);
 
     if (state.lighting) {
-      const gradCanvas = document.createElement('canvas'); gradCanvas.width = origW; gradCanvas.height = origH;
-      const gCtx = gradCanvas.getContext('2d');
-      
-      gCtx.drawImage(mainImg, 0, 0, origW, origH);
-      gCtx.globalCompositeOperation = 'source-in';
-      
-      const angleRad = Math.atan2(state.lightJoyY, state.lightJoyX);
-      const intensity = Math.min(1, Math.sqrt(state.lightJoyX**2 + state.lightJoyY**2) / 26);
+      const gradCanvas = document.createElement('canvas'); gradCanvas.width = origW; gradCanvas.height = origH; const gCtx = gradCanvas.getContext('2d');
+      gCtx.drawImage(mainImg, 0, 0, origW, origH); gCtx.globalCompositeOperation = 'source-in';
+      const angleRad = Math.atan2(state.lightJoyY, state.lightJoyX); const intensity = Math.min(1, Math.sqrt(state.lightJoyX**2 + state.lightJoyY**2) / 26);
       const x1 = origW/2 - Math.cos(angleRad) * (origW / 2); const y1 = origH/2 - Math.sin(angleRad) * (origH / 2);
       const x2 = origW/2 + Math.cos(angleRad) * (origW / 2); const y2 = origH/2 + Math.sin(angleRad) * (origH / 2);
-
       const grad = gCtx.createLinearGradient(x1, y1, x2, y2);
       const whiteStop = Math.max(0.1, 0.6 - (state.lightSoftness * 0.005)); const blackStop = Math.min(0.95, 0.4 + (state.lightSoftness * 0.005));
-
-      grad.addColorStop(0, `rgba(255, 255, 255, ${intensity * 0.9})`);
-      grad.addColorStop(whiteStop, `rgba(255, 255, 255, ${intensity * 0.4})`);
-      grad.addColorStop(0.5, `rgba(0, 0, 0, 0)`);
-      grad.addColorStop(blackStop, `rgba(0, 0, 0, ${intensity * 0.5})`);
-      grad.addColorStop(1, `rgba(0, 0, 0, ${intensity * 0.9})`);
-
+      grad.addColorStop(0, `rgba(255, 255, 255, ${intensity * 0.9})`); grad.addColorStop(whiteStop, `rgba(255, 255, 255, ${intensity * 0.4})`); grad.addColorStop(0.5, `rgba(0, 0, 0, 0)`); grad.addColorStop(blackStop, `rgba(0, 0, 0, ${intensity * 0.5})`); grad.addColorStop(1, `rgba(0, 0, 0, ${intensity * 0.9})`);
       gCtx.fillStyle = grad; gCtx.fillRect(0, 0, origW, origH);
-
       cCtx.globalCompositeOperation = 'hard-light'; cCtx.drawImage(gradCanvas, 0, 0, origW, origH);
     }
     ctx.drawImage(charCanvas, -origW / 2, -origH / 2, origW, origH);
@@ -698,14 +645,11 @@
     const dpr = window.devicePixelRatio || 2; const vw = window.innerWidth; const vh = window.innerHeight;
     canvas.width = vw * dpr; canvas.height = vh * dpr; ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
 
-    if (state.bgMode === 'color') {
-      ctx.save(); ctx.fillStyle = state.bgColor; ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.restore();
-    } else {
-      const source = state.bgMode === 'camera' ? video : bgImg;
-      const srcW = state.bgMode === 'camera' ? video.videoWidth : bgImg.naturalWidth; const srcH = state.bgMode === 'camera' ? video.videoHeight : bgImg.naturalHeight;
-      const sRatio = vw / vh; const srcRatio = srcW / srcH; let dW, dH; if (srcRatio > sRatio) { dH = vh; dW = vh * srcRatio; } else { dW = vw; dH = vw / srcRatio; }
-      ctx.save(); ctx.translate((vw * dpr) / 2 + state.bgX * dpr, (vh * dpr) / 2 + state.bgY * dpr); ctx.scale(state.bgZoom, state.bgZoom); ctx.filter = `brightness(${state.bgBright}%) blur(${state.bgBlur * dpr}px)`; ctx.drawImage(source, (-dW / 2) * dpr, (-dH / 2) * dpr, dW * dpr, dH * dpr); ctx.restore();
-    }
+    const source = state.bgMode === 'camera' ? video : bgImg;
+    const srcW = state.bgMode === 'camera' ? video.videoWidth : bgImg.naturalWidth; const srcH = state.bgMode === 'camera' ? video.videoHeight : bgImg.naturalHeight;
+    const sRatio = vw / vh; const srcRatio = srcW / srcH; let dW, dH; if (srcRatio > sRatio) { dH = vh; dW = vh * srcRatio; } else { dW = vw; dH = vw / srcRatio; }
+    
+    ctx.save(); ctx.translate((vw * dpr) / 2 + state.bgX * dpr, (vh * dpr) / 2 + state.bgY * dpr); ctx.scale(state.bgZoom, state.bgZoom); ctx.filter = `brightness(${state.bgBright}%) blur(${state.bgBlur * dpr}px)`; ctx.drawImage(source, (-dW / 2) * dpr, (-dH / 2) * dpr, dW * dpr, dH * dpr); ctx.restore();
 
     if (state.globalLightActive) {
       ctx.save();
