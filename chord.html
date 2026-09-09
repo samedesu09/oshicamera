@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Neon AR Camera</title>
+<meta name="theme-color" content="#060309">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; }
+  body {
+    width: 100vw; height: 100vh; overflow: hidden;
+    background-color: #000; color: #fff;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    position: relative;
+  }
+
+  /* カメラの映像を画面いっぱいに */
+  #camera-preview {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    object-fit: cover; z-index: 1;
+  }
+
+  /* 重ねる画像（ドラッグ可能） */
+  #overlay-img {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%); /* 初期位置 */
+    max-width: 80vw; display: none; z-index: 5;
+    /* ドラッグ中はこれをいじります */
+    touch-action: none; cursor: grab;
+    filter: drop-shadow(0 0 10px rgba(0,230,255,0.3));
+  }
+  #overlay-img:active { cursor: grabbing; }
+
+  /* 下部のコントロールパネル */
+  .control-panel {
+    position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+    width: 92%; max-width: 400px; padding: 16px;
+    background: rgba(12, 8, 16, 0.7); backdrop-filter: blur(12px);
+    border: 1px solid rgba(0, 230, 255, 0.3); border-radius: 16px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5), inset 0 0 15px rgba(0, 230, 255, 0.1);
+    z-index: 10; display: flex; flex-direction: column; gap: 12px;
+  }
+
+  .control-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .label { font-size: 0.65rem; color: #00e6ff; letter-spacing: 0.1em; width: 45px; }
+
+  /* スライダー */
+  input[type="range"] { flex: 1; appearance: none; height: 4px; background: rgba(255,255,255,0.2); border-radius: 2px; outline: none; }
+  input[type="range"]::-webkit-slider-thumb {
+    appearance: none; width: 16px; height: 16px; border-radius: 50%;
+    background: #00e6ff; box-shadow: 0 0 8px #00e6ff; cursor: pointer;
+  }
+
+  /* ボタン類 */
+  .btn {
+    padding: 10px 15px; border-radius: 8px; font-size: 0.8rem; font-weight: bold; letter-spacing: 0.05em;
+    cursor: pointer; text-align: center; transition: 0.2s; border: none; outline: none;
+  }
+  .btn-pink { background: rgba(255, 42, 109, 0.15); border: 1px dashed #ff2a6d; color: #ff758c; }
+  .btn-pink:hover { background: rgba(255, 42, 109, 0.3); box-shadow: 0 0 12px rgba(255, 42, 109, 0.5); }
+  
+  /* シャッターボタン (ド派手なシアン) */
+  .btn-shutter {
+    width: 100%; padding: 14px; background: rgba(0, 230, 255, 0.15); border: 1px solid #00e6ff; color: #00e6ff;
+    font-size: 1.1rem; box-shadow: 0 0 15px rgba(0, 230, 255, 0.3);
+  }
+  .btn-shutter:hover, .btn-shutter:active { background: #00e6ff; color: #000; box-shadow: 0 0 25px #00e6ff; }
+
+  /* 合成用の非表示キャンバス */
+  #capture-canvas { display: none; }
+  
+  /* 画面フラッシュ（シャッター演出用） */
+  #flash {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    background: #fff; z-index: 100; opacity: 0; pointer-events: none;
+    transition: opacity 0.1s ease-out;
+  }
+</style>
+</head>
+<body>
+
+<!-- カメラ映像 -->
+<video id="camera-preview" autoplay playsinline></video>
+
+<!-- 重ねる画像 -->
+<img id="overlay-img" src="" alt="overlay">
+
+<!-- シャッター時のフラッシュ演出 -->
+<div id="flash"></div>
+
+<input type="file" id="image-loader" accept="image/png, image/jpeg, image/gif" style="display: none;">
+
+<!-- コントロールパネル -->
+<div class="control-panel">
+  <button class="btn btn-pink" onclick="document.getElementById('image-loader').click()">＋ 透過画像を読み込む</button>
+  
+  <div class="control-row">
+    <div class="label">SIZE</div>
+    <input type="range" id="size-slider" min="10" max="200" value="100">
+  </div>
+  
+  <div class="control-row">
+    <div class="label">TRANS</div>
+    <input type="range" id="opacity-slider" min="0" max="100" value="100">
+  </div>
+
+  <button class="btn btn-shutter" onclick="takePhoto()">📸 撮影して保存</button>
+</div>
+
+<!-- 合成用キャンバス -->
+<canvas id="capture-canvas"></canvas>
+
+<script>
+  const video = document.getElementById('camera-preview');
+  const overlayImg = document.getElementById('overlay-img');
+  const sizeSlider = document.getElementById('size-slider');
+  const opacitySlider = document.getElementById('opacity-slider');
+  const fileInput = document.getElementById('image-loader');
+  
+  // ==========================================
+  // 1. カメラの起動（背面カメラ優先）
+  // ==========================================
+  async function startCamera() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment' }, // 背面カメラ
+        audio: false
+      });
+      video.srcObject = stream;
+    } catch (err) {
+      alert("カメラの起動に失敗しました。カメラのアクセス許可を確認してください！\nエラー: " + err.message);
+    }
+  }
+  window.addEventListener('load', startCamera);
+
+  // ==========================================
+  // 2. 画像の読み込みと表示
+  // ==========================================
+  let baseWidth = 0; // 読み込んだ画像の元の幅
+  
+  fileInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      overlayImg.src = event.target.result;
+      overlayImg.style.display = 'block';
+      
+      // 画像ロード後に基本サイズを記憶してリセット
+      overlayImg.onload = () => {
+        baseWidth = overlayImg.naturalWidth;
+        // 画面幅の半分くらいを初期サイズにする
+        const initialWidth = window.innerWidth * 0.5; 
+        overlayImg.style.width = initialWidth + 'px';
+        sizeSlider.value = 100; // スライダーリセット
+        opacitySlider.value = 100;
+        overlayImg.style.opacity = 1;
+        
+        // 位置を真ん中にリセット
+        overlayImg.style.left = '50%';
+        overlayImg.style.top = '50%';
+        overlayImg.style.transform = 'translate(-50%, -50%)';
+      };
+    };
+    reader.readAsDataURL(file);
+  });
+
+  // ==========================================
+  // 3. スライダー操作（サイズ・透明度）
+  // ==========================================
+  sizeSlider.addEventListener('input', (e) => {
+    // 100を基準(1倍)として 0.1倍〜2倍 の間でスケール
+    const scale = e.target.value / 100;
+    // 初期サイズ(画面幅の50%)をベースに拡大縮小
+    overlayImg.style.width = (window.innerWidth * 0.5 * scale) + 'px';
+  });
+
+  opacitySlider.addEventListener('input', (e) => {
+    overlayImg.style.opacity = e.target.value / 100;
+  });
+
+  // ==========================================
+  // 4. 画像のドラッグ（指で移動）処理
+  // ==========================================
+  let isDragging = false;
+  let startX, startY;
+  let initialLeft, initialTop;
+
+  // PC（マウス）＆ スマホ（タッチ）両対応
+  function onDragStart(e) {
+    if (e.target !== overlayImg) return;
+    e.preventDefault();
+    isDragging = true;
+    
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    
+    startX = clientX;
+    startY = clientY;
+    
+    // 現在の座標を取得 (translateを解除してleft/topだけで制御するための計算)
+    const rect = overlayImg.getBoundingClientRect();
+    overlayImg.style.transform = 'none';
+    overlayImg.style.left = rect.left + 'px';
+    overlayImg.style.top = rect.top + 'px';
+    
+    initialLeft = rect.left;
+    initialTop = rect.top;
+  }
+
+  function onDragMove(e) {
+    if (!isDragging) return;
+    e.preventDefault();
+    
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    
+    const dx = clientX - startX;
+    const dy = clientY - startY;
+    
+    overlayImg.style.left = (initialLeft + dx) + 'px';
+    overlayImg.style.top = (initialTop + dy) + 'px';
+  }
+
+  function onDragEnd() { isDragging = false; }
+
+  // イベントリスナー登録
+  overlayImg.addEventListener('mousedown', onDragStart);
+  window.addEventListener('mousemove', onDragMove);
+  window.addEventListener('mouseup', onDragEnd);
+  
+  overlayImg.addEventListener('touchstart', onDragStart, { passive: false });
+  window.addEventListener('touchmove', onDragMove, { passive: false });
+  window.addEventListener('touchend', onDragEnd);
+
+  // ==========================================
+  // 5. 撮影（見たまま合成＆ダウンロード）
+  // ==========================================
+  function takePhoto() {
+    if (!overlayImg.src || overlayImg.style.display === 'none') {
+      alert("先に透過画像を読み込んでください！");
+      return;
+    }
+
+    // フラッシュ演出
+    const flash = document.getElementById('flash');
+    flash.style.opacity = 1;
+    setTimeout(() => { flash.style.opacity = 0; }, 150);
+
+    const canvas = document.getElementById('capture-canvas');
+    const ctx = canvas.getContext('2d');
+
+    // 画面のサイズに合わせてキャンバスを作る
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    canvas.width = vw;
+    canvas.height = vh;
+
+    // 1. カメラ映像を描画（object-fit: cover をシミュレート）
+    const videoRatio = video.videoWidth / video.videoHeight;
+    const screenRatio = vw / vh;
+    let drawW, drawH, drawX, drawY;
+
+    if (videoRatio > screenRatio) {
+      // 映像の方が横長 -> 左右をクロップ
+      drawH = vh;
+      drawW = vh * videoRatio;
+      drawX = (vw - drawW) / 2;
+      drawY = 0;
+    } else {
+      // 映像の方が縦長 -> 上下をクロップ
+      drawW = vw;
+      drawH = vw / videoRatio;
+      drawX = 0;
+      drawY = (vh - drawH) / 2;
+    }
+    // カメラの映像を背景として描く
+    ctx.drawImage(video, drawX, drawY, drawW, drawH);
+
+    // 2. 透過画像を重ねて描画
+    const imgRect = overlayImg.getBoundingClientRect();
+    ctx.globalAlpha = overlayImg.style.opacity || 1;
+    ctx.drawImage(overlayImg, imgRect.left, imgRect.top, imgRect.width, imgRect.height);
+
+    // 3. ダウンロード処理
+    const dataURL = canvas.toDataURL('image/jpeg', 0.95);
+    const link = document.createElement('a');
+    link.href = dataURL;
+    // 日時をファイル名にする
+    const now = new Date();
+    const timeStr = `${now.getFullYear()}${(now.getMonth()+1).toString().padStart(2,'0')}${now.getDate().toString().padStart(2,'0')}_${now.getHours()}${now.getMinutes()}${now.getSeconds()}`;
+    link.download = `neon_camera_${timeStr}.jpg`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+</script>
+</body>
+</html>
