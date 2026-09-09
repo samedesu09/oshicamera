@@ -2,52 +2,81 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Neon AR Camera - Pro</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Neon AR Camera - Pro Studio</title>
 <meta name="theme-color" content="#060309">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; }
-  body {
-    width: 100vw; height: 100vh; overflow: hidden;
+  html, body {
+    width: 100vw; height: 100dvh; overflow: hidden;
     background-color: #000; color: #fff;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    position: fixed; top: 0; left: 0;
   }
 
-  /* カメラ映像 */
-  #camera-preview {
-    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+  /* 背景用：カメラ＆静止画 (中央配置でドラッグ・ズーム対応) */
+  #camera-preview, #bg-image-preview {
+    position: absolute; top: 50%; left: 50%;
+    width: 100vw; height: 100dvh;
     object-fit: cover; z-index: 1;
+    transform: translate(-50%, -50%);
+    transform-origin: center center;
   }
+  #bg-image-preview { display: none; }
 
-  /* 合成用画像（コンテナ） */
+  /* 画面全体のドラッグ判定用レイヤー */
+  #touch-layer {
+    position: absolute; top: 0; left: 0; width: 100vw; height: 100dvh;
+    z-index: 10; touch-action: none; cursor: grab;
+  }
+  #touch-layer:active { cursor: grabbing; }
+
+  /* 推し画像コンテナ */
   #overlay-container {
     position: absolute; top: 50%; left: 50%;
     transform: translate(-50%, -50%);
-    display: none; z-index: 5;
-    touch-action: none; cursor: grab;
+    display: none; z-index: 5; pointer-events: none;
   }
-  #overlay-container:active { cursor: grabbing; }
 
-  /* 床影用（足元支点） */
+  /* 床影 */
   #floor-shadow-img {
     position: absolute; bottom: 0; left: 0; width: 100%; height: 100%;
     transform-origin: bottom center; pointer-events: none; display: none;
   }
   
-  /* メイン画像 */
+  /* メイン画像ラッパー (ライティング用マスク) */
+  .main-img-wrapper {
+    position: relative; width: 100%; height: 100%;
+    overflow: hidden; pointer-events: none; z-index: 2;
+  }
   #main-overlay-img {
     position: relative; width: 100%; height: 100%; display: block;
-    pointer-events: none; z-index: 2;
+    pointer-events: none;
   }
 
-  /* シャッターボタン (中央下) */
+  /* ★ライティング用グラデーション (ハードライト合成で強烈な光を表現) */
+  #lighting-overlay {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    pointer-events: none; mix-blend-mode: hard-light; opacity: 0;
+    transition: opacity 0.2s;
+  }
+
+  /* 下部コントロールバー */
+  .bottom-bar {
+    position: absolute; bottom: calc(env(safe-area-inset-bottom, 15px) + 15px);
+    left: 0; width: 100vw; height: 80px;
+    z-index: 20; display: flex; align-items: center; justify-content: space-between;
+    padding: 0 24px; pointer-events: none;
+  }
+
+  /* シャッターボタン */
   .shutter-btn-wrapper {
-    position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
-    z-index: 10; display: flex; align-items: center; justify-content: center;
+    position: absolute; left: 50%; transform: translateX(-50%);
+    pointer-events: auto;
   }
   .shutter-btn {
-    width: 70px; height: 70px; border-radius: 50%;
+    width: 68px; height: 68px; border-radius: 50%;
     background: rgba(0, 230, 255, 0.2); border: 3px solid #00e6ff;
     box-shadow: 0 0 15px rgba(0, 230, 255, 0.5), inset 0 0 10px rgba(0, 230, 255, 0.3);
     cursor: pointer; display: flex; justify-content: center; align-items: center;
@@ -55,86 +84,119 @@
   }
   .shutter-btn:active { background: #00e6ff; box-shadow: 0 0 25px #00e6ff; transform: scale(0.92); }
   .shutter-inner {
-    width: 54px; height: 54px; border-radius: 50%; background: #fff;
+    width: 52px; height: 52px; border-radius: 50%; background: #fff;
     box-shadow: inset 0 0 5px rgba(0,0,0,0.5);
   }
   .shutter-btn:active .shutter-inner { background: #000; }
 
-  /* メニューボタン (右下) */
+  /* 右下メニューボタン */
   .menu-toggle-btn {
-    position: absolute; bottom: 40px; right: 30px; z-index: 10;
-    width: 50px; height: 50px; border-radius: 12px;
-    background: rgba(12, 8, 16, 0.6); backdrop-filter: blur(8px);
+    position: absolute; right: 24px; pointer-events: auto;
+    width: 48px; height: 48px; border-radius: 12px;
+    background: rgba(12, 8, 16, 0.65); backdrop-filter: blur(8px);
     border: 1px solid rgba(255, 255, 255, 0.2); color: #fff;
-    font-size: 1.5rem; cursor: pointer; transition: 0.2s; outline: none;
+    font-size: 1.4rem; cursor: pointer; transition: 0.2s; outline: none;
     display: flex; justify-content: center; align-items: center;
   }
   .menu-toggle-btn:active { transform: scale(0.9); }
 
+  /* 左下スマート調整パネル */
+  .quick-adjust-panel {
+    position: absolute; left: 16px; width: calc(50% - 55px);
+    display: flex; flex-direction: column; gap: 4px; pointer-events: auto;
+    background: rgba(12, 8, 16, 0.7); backdrop-filter: blur(10px);
+    border: 1px solid rgba(0, 230, 255, 0.3); border-radius: 12px;
+    padding: 8px 12px; opacity: 0; pointer-events: none; transition: 0.25s ease;
+  }
+  .quick-adjust-panel.is-active { opacity: 1; pointer-events: auto; }
+  .quick-label-row { display: flex; justify-content: space-between; align-items: center; }
+  .quick-label { font-size: 0.6rem; color: #00e6ff; font-weight: bold; letter-spacing: 0.05em; }
+  .quick-val { font-size: 0.6rem; color: #fff; font-family: monospace; }
+
+  /* 左下ジョイスティック */
+  .quick-joystick-wrap {
+    position: absolute; left: 16px; bottom: 0px; width: 85px; height: 85px;
+    border-radius: 50%; background: rgba(12, 8, 16, 0.75); backdrop-filter: blur(8px);
+    border: 2px solid rgba(0, 230, 255, 0.4); display: none; justify-content: center; align-items: center;
+    pointer-events: auto; box-shadow: 0 0 15px rgba(0,0,0,0.6);
+  }
+  .quick-joystick-wrap.is-active { display: flex; }
+  .quick-joystick-wrap.pink-theme { border-color: rgba(255, 42, 109, 0.5); }
+  .quick-joystick-wrap.yellow-theme { border-color: rgba(255, 215, 0, 0.6); box-shadow: 0 0 15px rgba(255, 215, 0, 0.2); }
+  
+  .quick-joystick-knob {
+    width: 28px; height: 28px; border-radius: 50%;
+    background: #00e6ff; box-shadow: 0 0 10px #00e6ff; position: absolute;
+  }
+  .quick-joystick-knob.pink-theme { background: #ff2a6d; box-shadow: 0 0 10px #ff2a6d; }
+  .quick-joystick-knob.yellow-theme { background: #ffd700; box-shadow: 0 0 12px #ffd700; }
+
+  /* スライダー */
+  input[type="range"] { appearance: none; width: 100%; height: 5px; background: rgba(255,255,255,0.2); border-radius: 3px; outline: none; margin: 4px 0; }
+  input[type="range"]::-webkit-slider-thumb {
+    appearance: none; width: 18px; height: 18px; border-radius: 50%;
+    background: #00e6ff; box-shadow: 0 0 8px rgba(0, 230, 255, 0.8); cursor: pointer;
+  }
+
   /* サイドパネル */
   .side-panel {
-    position: absolute; top: 0; right: 0; width: 320px; height: 100vh;
-    background: rgba(12, 8, 16, 0.85); backdrop-filter: blur(16px);
+    position: absolute; top: 0; right: 0; width: 290px; height: 100dvh;
+    background: rgba(12, 8, 16, 0.92); backdrop-filter: blur(20px);
     border-left: 1px solid rgba(255, 255, 255, 0.15); z-index: 100;
     transform: translateX(100%); transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
-    display: flex; flex-direction: column; padding: 24px 20px; gap: 16px; overflow-y: auto;
+    display: flex; flex-direction: column; padding: 20px 16px; gap: 12px; overflow-y: auto;
   }
   .side-panel.is-open { transform: translateX(0); }
   
-  .panel-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 12px; }
-  .panel-title { font-size: 0.9rem; font-weight: bold; letter-spacing: 0.1em; color: #fff; }
-  .close-btn { background: none; border: none; color: #aaa; font-size: 1.5rem; cursor: pointer; padding: 0 10px; }
+  .panel-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 10px; }
+  .panel-title { font-size: 0.85rem; font-weight: bold; letter-spacing: 0.1em; color: #fff; }
+  .close-btn { background: none; border: none; color: #aaa; font-size: 1.4rem; cursor: pointer; padding: 0 8px; }
 
-  .control-group { display: flex; flex-direction: column; gap: 6px; }
-  .label-row { display: flex; justify-content: space-between; align-items: center; }
-  .label { font-size: 0.65rem; color: #8a8190; letter-spacing: 0.05em; font-weight: bold; }
-  .val-text { font-size: 0.65rem; color: #00e6ff; font-family: monospace; }
-
-  input[type="range"] { appearance: none; width: 100%; height: 4px; background: rgba(255,255,255,0.15); border-radius: 2px; outline: none; margin: 8px 0; }
-  input[type="range"]::-webkit-slider-thumb {
-    appearance: none; width: 18px; height: 18px; border-radius: 50%;
-    background: #00e6ff; box-shadow: 0 0 10px rgba(0, 230, 255, 0.6); cursor: pointer;
+  /* モード切替・設定ボタンスタイル */
+  .menu-section-title { font-size: 0.65rem; color: #8a8190; letter-spacing: 0.05em; font-weight: bold; margin-top: 6px; }
+  .menu-item-btn {
+    width: 100%; padding: 10px 12px; border-radius: 8px; background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.1); color: #fff; font-size: 0.75rem; text-align: left;
+    cursor: pointer; display: flex; justify-content: space-between; align-items: center; transition: 0.15s;
   }
-  
-  /* ピンク系ボタンスタイル（床影用） */
-  input.pink-slider::-webkit-slider-thumb {
-    background: #ff2a6d; box-shadow: 0 0 10px rgba(255, 42, 109, 0.6);
-  }
+  .menu-item-btn:active { background: rgba(0, 230, 255, 0.2); border-color: #00e6ff; color: #00e6ff; }
+  .menu-item-btn span { font-family: monospace; font-size: 0.7rem; color: #00e6ff; }
+  .menu-item-btn.pink-item:active { background: rgba(255, 42, 109, 0.2); border-color: #ff2a6d; color: #ff758c; }
+  .menu-item-btn.pink-item span { color: #ff758c; }
+  .menu-item-btn.yellow-item:active { background: rgba(255, 215, 0, 0.2); border-color: #ffd700; color: #ffd700; }
+  .menu-item-btn.yellow-item span { color: #ffd700; }
 
   .btn-action {
-    padding: 12px; border-radius: 8px; font-size: 0.8rem; font-weight: bold; cursor: pointer;
-    width: 100%; text-align: center; border: none; outline: none; transition: 0.2s;
+    padding: 11px; border-radius: 8px; font-size: 0.75rem; font-weight: bold; cursor: pointer;
+    width: 100%; text-align: center; border: none; outline: none;
   }
-  .btn-upload { background: rgba(255, 42, 109, 0.15); border: 1px dashed #ff2a6d; color: #ff758c; margin-bottom: 5px; }
-  .btn-upload:active { background: rgba(255, 42, 109, 0.3); }
-
-  .btn-export { background: rgba(0, 230, 255, 0.15); border: 1px dashed #00e6ff; color: #00e6ff; margin-bottom: 10px; }
-  .btn-export:active { background: rgba(0, 230, 255, 0.3); }
+  .btn-upload { background: rgba(255, 42, 109, 0.15); border: 1px dashed #ff2a6d; color: #ff758c; }
+  .btn-bg-select { background: rgba(0, 230, 255, 0.15); border: 1px dashed #00e6ff; color: #00e6ff; margin-top: 4px; }
 
   .toggle-row { display: flex; gap: 8px; }
   .toggle-btn {
     flex: 1; padding: 8px 0; background: rgba(255,255,255,0.05); border: 1px solid transparent;
-    color: #888; font-size: 0.75rem; border-radius: 6px; cursor: pointer; transition: 0.2s;
+    color: #888; font-size: 0.75rem; border-radius: 6px; cursor: pointer; font-weight: bold;
   }
-  .toggle-btn.active.blue { background: rgba(0, 230, 255, 0.2); border-color: #00e6ff; color: #fff; box-shadow: 0 0 10px rgba(0,230,255,0.3); }
-  .toggle-btn.active.pink { background: rgba(255, 42, 109, 0.2); border-color: #ff2a6d; color: #fff; box-shadow: 0 0 10px rgba(255,42,109,0.3); }
+  .toggle-btn.active.blue { background: rgba(0, 230, 255, 0.2); border-color: #00e6ff; color: #fff; }
+  .toggle-btn.active.pink { background: rgba(255, 42, 109, 0.2); border-color: #ff2a6d; color: #fff; }
+  .toggle-btn.active.yellow { background: rgba(255, 215, 0, 0.2); border-color: #ffd700; color: #ffd700; }
 
-  /* アナログスティック */
-  .joystick-container {
-    width: 120px; height: 120px; border-radius: 50%; margin: 10px auto;
-    background: rgba(255, 255, 255, 0.05); border: 2px solid rgba(0, 230, 255, 0.2);
-    position: relative; display: flex; justify-content: center; align-items: center;
-    touch-action: none; box-shadow: inset 0 0 20px rgba(0,0,0,0.5);
+  /* タブUI（推し調整 vs 背景調整） */
+  .tab-container {
+    display: flex; background: rgba(0,0,0,0.5); border-radius: 8px; padding: 4px; margin-bottom: 8px;
   }
-  .joystick-knob {
-    width: 36px; height: 36px; border-radius: 50%; position: absolute;
-    background: #00e6ff; box-shadow: 0 0 15px #00e6ff; cursor: grab;
-    transition: transform 0.05s ease-out;
+  .tab-btn {
+    flex: 1; padding: 10px 0; font-size: 0.8rem; font-weight: bold; text-align: center;
+    color: #888; background: transparent; border: none; border-radius: 6px; cursor: pointer; transition: 0.2s;
   }
-  .joystick-knob:active { cursor: grabbing; }
+  .tab-btn.active { background: rgba(0, 230, 255, 0.25); color: #fff; box-shadow: 0 0 10px rgba(0,230,255,0.3); }
+
+  .tab-content { display: none; flex-direction: column; gap: 12px; }
+  .tab-content.is-active { display: flex; }
 
   #flash {
-    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    position: absolute; top: 0; left: 0; width: 100vw; height: 100dvh;
     background: #fff; z-index: 200; opacity: 0; pointer-events: none; transition: opacity 0.1s ease-out;
   }
   #capture-canvas { display: none; }
@@ -143,90 +205,116 @@
 <body>
 
 <video id="camera-preview" autoplay playsinline></video>
+<img id="bg-image-preview" src="" alt="bg">
 
-<!-- 影とメイン画像をまとめるコンテナ -->
+<!-- ドラッグ検知用レイヤー（全画面） -->
+<div id="touch-layer"></div>
+
 <div id="overlay-container">
   <img id="floor-shadow-img" src="" alt="floor-shadow">
-  <img id="main-overlay-img" src="" alt="overlay">
+  <div class="main-img-wrapper" id="main-wrapper">
+    <img id="main-overlay-img" src="" alt="overlay">
+    <div id="lighting-overlay"></div>
+  </div>
 </div>
 
 <div id="flash"></div>
 
+<!-- ファイル読み込み用 -->
 <input type="file" id="image-loader" accept="image/png, image/jpeg, image/gif" style="display: none;">
+<input type="file" id="bg-loader" accept="image/png, image/jpeg, image/webp" style="display: none;">
 
-<div class="shutter-btn-wrapper">
-  <button class="shutter-btn" onclick="takePhoto()"><div class="shutter-inner"></div></button>
+<!-- 下部コントロールバー -->
+<div class="bottom-bar">
+  <div class="quick-adjust-panel" id="quick-panel">
+    <div class="quick-label-row">
+      <span class="quick-label" id="quick-label-name">SIZE</span>
+      <span class="quick-val" id="quick-val-text">100%</span>
+    </div>
+    <input type="range" id="quick-slider" min="10" max="250" value="100">
+  </div>
+
+  <div class="quick-joystick-wrap" id="quick-joy">
+    <div class="quick-joystick-knob" id="quick-joy-knob"></div>
+  </div>
+
+  <div class="shutter-btn-wrapper">
+    <button class="shutter-btn" onclick="takePhoto()"><div class="shutter-inner"></div></button>
+  </div>
+
+  <button class="menu-toggle-btn" onclick="toggleMenu()">⚙️</button>
 </div>
-<button class="menu-toggle-btn" onclick="toggleMenu()">⚙️</button>
 
+<!-- 右側メニュー -->
 <div class="side-panel" id="side-menu">
   <div class="panel-header">
-    <div class="panel-title">IMAGE SETTINGS</div>
+    <div class="panel-title">STUDIO CONTROLS</div>
     <button class="close-btn" onclick="toggleMenu()">×</button>
   </div>
+
+  <!-- ① モード選択＆推し読み込みエリア -->
+  <div class="menu-section-title">BACKGROUND MODE (背景)</div>
+  <div class="toggle-row">
+    <button class="toggle-btn blue active" id="btn-bg-cam" onclick="setBgMode('camera')">📷 カメラ</button>
+    <button class="toggle-btn blue" id="btn-bg-img" onclick="setBgMode('image')">🖼️ 背景選択</button>
+  </div>
+  <button class="btn-action btn-bg-select" id="btn-choose-bg" style="display: none;" onclick="document.getElementById('bg-loader').click()">📁 背景写真を選択</button>
   
-  <button class="btn-action btn-upload" onclick="document.getElementById('image-loader').click()">＋ 透過画像を選択</button>
-  <button class="btn-action btn-export" onclick="exportTransformedImage()">💾 高画質で透過PNG保存</button>
+  <hr style="border:0; border-top:1px dashed rgba(255,255,255,0.15); margin: 6px 0;">
 
-  <div class="control-group">
-    <div class="label-row"><div class="label">SIZE (大きさ)</div><div class="val-text" id="val-size">100%</div></div>
-    <input type="range" id="sl-size" min="10" max="250" value="100">
-  </div>
+  <button class="btn-action btn-upload" onclick="document.getElementById('image-loader').click()">＋ 推しを配置する</button>
 
-  <div class="control-group">
-    <div class="label-row"><div class="label">ANGLE (回転)</div><div class="val-text" id="val-rot">0°</div></div>
-    <input type="range" id="sl-rot" min="-180" max="180" value="0">
-  </div>
-
-  <div class="control-group">
-    <div class="label-row"><div class="label">BRIGHTNESS (明るさ)</div><div class="val-text" id="val-bright">100%</div></div>
-    <input type="range" id="sl-bright" min="0" max="200" value="100">
-  </div>
-
-  <!-- 床影 (FLOOR SHADOW) 設定 -->
-  <hr style="border:0; border-top:1px dashed rgba(255, 42, 109, 0.3); margin: 8px 0;">
-  
-  <div class="control-group">
-    <div class="label" style="color: #ff758c;">FLOOR SHADOW (床影)</div>
-    <div class="toggle-row">
-      <button class="toggle-btn pink" id="btn-fshadow-on" onclick="setFloorShadow(true)">ON</button>
-      <button class="toggle-btn pink active" id="btn-fshadow-off" onclick="setFloorShadow(false)">OFF</button>
-    </div>
-  </div>
-
-  <div class="control-group" id="fshadow-controls" style="display: none; opacity: 0; transition: 0.3s;">
-    <div class="label-row"><div class="label">LENGTH (奥・手前への長さ)</div><div class="val-text" id="val-fsh-len">-80%</div></div>
-    <input type="range" class="pink-slider" id="sl-fsh-len" min="-200" max="200" value="-80">
+  <!-- ② スタジオ調整エリア（推しが読み込まれると表示） -->
+  <div id="studio-controls" style="display: none; flex-direction: column; gap: 12px; margin-top: 10px;">
     
-    <div class="label-row" style="margin-top: 8px;"><div class="label">ANGLE (左右の傾き)</div><div class="val-text" id="val-fsh-ang">20°</div></div>
-    <input type="range" class="pink-slider" id="sl-fsh-ang" min="-80" max="80" value="20">
-    
-    <div class="label-row" style="margin-top: 8px;"><div class="label">BLUR (ぼかし具合)</div><div class="val-text" id="val-fsh-blur">5px</div></div>
-    <input type="range" class="pink-slider" id="sl-fsh-blur" min="0" max="50" value="5">
-
-    <div class="label-row" style="margin-top: 8px;"><div class="label">OPACITY (濃さ)</div><div class="val-text" id="val-fsh-op">60%</div></div>
-    <input type="range" class="pink-slider" id="sl-fsh-op" min="0" max="100" value="60">
-  </div>
-
-  <!-- 壁影 (WALL SHADOW) 設定 -->
-  <hr style="border:0; border-top:1px dashed rgba(0, 230, 255, 0.3); margin: 8px 0;">
-
-  <div class="control-group">
-    <div class="label">WALL SHADOW (壁影/ドロップシャドウ)</div>
-    <div class="toggle-row">
-      <button class="toggle-btn blue" id="btn-shadow-on" onclick="setWallShadow(true)">ON</button>
-      <button class="toggle-btn blue active" id="btn-shadow-off" onclick="setWallShadow(false)">OFF</button>
+    <div class="tab-container">
+      <!-- ★タブのクリック時はメニューを閉じない！ -->
+      <button class="tab-btn active" id="tab-btn-oshi" onclick="switchTab('oshi')">✨ 推し調整</button>
+      <button class="tab-btn" id="tab-btn-bg" onclick="switchTab('bg')">🌆 背景調整</button>
     </div>
-  </div>
 
-  <div class="control-group" id="shadow-controls" style="display: none; opacity: 0; transition: 0.3s;">
-    <div class="label-row" style="margin-top: 8px;"><div class="label">SHADOW OPACITY (濃さ)</div><div class="val-text" id="val-sh-op">50%</div></div>
-    <input type="range" id="sl-sh-op" min="0" max="100" value="50">
-    
-    <div class="label-row" style="margin-top: 8px;"><div class="label">DIRECTION (方向と距離)</div></div>
-    <div class="joystick-container" id="joy-container">
-      <div class="joystick-knob" id="joy-knob"></div>
+    <!-- 🌟 推し調整タブ -->
+    <div class="tab-content is-active" id="tab-content-oshi">
+      <div class="menu-section-title">IMAGE (ベース画像)</div>
+      <button class="menu-item-btn" onclick="selectControl('size')">SIZE (大きさ)<span id="badge-size">100%</span></button>
+      <button class="menu-item-btn" onclick="selectControl('rot')">ANGLE (回転)<span id="badge-rot">0°</span></button>
+      <button class="menu-item-btn" onclick="selectControl('bright')">BRIGHT (ベースの明るさ)<span id="badge-bright">100%</span></button>
+
+      <div class="menu-section-title" style="color: #ffd700;">LIGHTING (スポットライト)</div>
+      <div class="toggle-row">
+        <button class="toggle-btn yellow" id="btn-light-on" onclick="setLighting(true)">ON</button>
+        <button class="toggle-btn yellow active" id="btn-light-off" onclick="setLighting(false)">OFF</button>
+      </div>
+      <button class="menu-item-btn yellow-item" onclick="selectControl('ljoy')">DIRECTION & POWER<span>🕹️</span></button>
+      <button class="menu-item-btn yellow-item" onclick="selectControl('light-soft')">SOFTNESS (ボカシ)<span id="badge-light-soft">50%</span></button>
+
+      <div class="menu-section-title">FLOOR SHADOW (床影)</div>
+      <div class="toggle-row">
+        <button class="toggle-btn pink" id="btn-fshadow-on" onclick="setFloorShadow(true)">ON</button>
+        <button class="toggle-btn pink active" id="btn-fshadow-off" onclick="setFloorShadow(false)">OFF</button>
+      </div>
+      <button class="menu-item-btn pink-item" onclick="selectControl('fjoy')">DIRECTION & LENGTH<span>🕹️</span></button>
+      <button class="menu-item-btn pink-item" onclick="selectControl('fsh-blur')">BLUR (ぼかし)<span id="badge-fsh-blur">5px</span></button>
+      <button class="menu-item-btn pink-item" onclick="selectControl('fsh-op')">OPACITY (濃さ)<span id="badge-fsh-op">60%</span></button>
+
+      <div class="menu-section-title">WALL SHADOW (壁影)</div>
+      <div class="toggle-row">
+        <button class="toggle-btn blue" id="btn-wshadow-on" onclick="setWallShadow(true)">ON</button>
+        <button class="toggle-btn blue active" id="btn-wshadow-off" onclick="setWallShadow(false)">OFF</button>
+      </div>
+      <button class="menu-item-btn" onclick="selectControl('wjoy')">DIRECTION (方向と距離)<span>🕹️</span></button>
+      <button class="menu-item-btn" onclick="selectControl('wsh-op')">OPACITY (濃さ)<span id="badge-wsh-op">50%</span></button>
     </div>
+
+    <!-- 🌆 背景調整タブ -->
+    <div class="tab-content" id="tab-content-bg">
+      <div class="menu-section-title">BACKGROUND (背景の調整)</div>
+      <button class="menu-item-btn" onclick="selectControl('bg-zoom')">🔍 ZOOM (倍率)<span id="badge-bg-zoom">1.0x</span></button>
+      <button class="menu-item-btn" onclick="selectControl('bg-blur')">💧 BLUR (被写界深度)<span id="badge-bg-blur">0px</span></button>
+      <button class="menu-item-btn" onclick="selectControl('bg-bright')">☀️ BRIGHT (明るさ)<span id="badge-bg-bright">100%</span></button>
+      <p style="font-size: 0.7rem; color: #aaa; margin-top: 10px;">💡 ヒント: 背景調整タブを選んでいる時は、画面をスワイプすると背景の位置を動かせるよ！</p>
+    </div>
+
   </div>
 </div>
 
@@ -234,28 +322,159 @@
 
 <script>
   const video = document.getElementById('camera-preview');
+  const bgImg = document.getElementById('bg-image-preview');
   const overlayContainer = document.getElementById('overlay-container');
+  const mainWrapper = document.getElementById('main-wrapper');
   const mainImg = document.getElementById('main-overlay-img');
+  const lightOverlay = document.getElementById('lighting-overlay');
   const floorImg = document.getElementById('floor-shadow-img');
-  const fileInput = document.getElementById('image-loader');
   
+  const fileInput = document.getElementById('image-loader');
+  const bgInput = document.getElementById('bg-loader');
+  const touchLayer = document.getElementById('touch-layer');
+
+  let cameraStream = null;
+
+  // アプリの状態
   let state = {
-    size: 100, rotZ: 0, bright: 100,
+    bgMode: 'camera', // 'camera' or 'image'
+    editTarget: 'oshi', // 'oshi' or 'bg'
+    
+    bgZoom: 1.0, bgX: 0, bgY: 0, bgBlur: 0, bgBright: 100,
+
+    size: 100, rotZ: 0, bright: 100, oshiX: 0, oshiY: 0,
+    lighting: false, lightJoyX: 18, lightJoyY: -18, lightSoftness: 50,
     wallShadow: false, wallShadowOp: 50, wallShadowX: 15, wallShadowY: 15,
-    floorShadow: false, floorShadowOp: 60, floorShadowLen: -80, floorShadowAngle: 20, floorShadowBlur: 5
+    floorShadow: false, floorShadowOp: 60, floorShadowBlur: 5, floorShadowJoyX: 10, floorShadowJoyY: -22
   };
 
-  function toggleMenu() { document.getElementById('side-menu').classList.toggle('is-open'); }
+  let activeMode = 'size';
+
+  const configs = {
+    'bg-zoom':    { name: 'BG ZOOM', min: 10, max: 40, step: 1, unit: 'x', div: 10, get: () => state.bgZoom * 10, set: v => state.bgZoom = v / 10 },
+    'bg-blur':    { name: 'BG BLUR', min: 0, max: 30, step: 1, unit: 'px', div: 1, get: () => state.bgBlur, set: v => state.bgBlur = v },
+    'bg-bright':  { name: 'BG BRIGHT', min: 0, max: 200, step: 1, unit: '%', div: 1, get: () => state.bgBright, set: v => state.bgBright = v },
+    
+    'size':       { name: 'OSHI SIZE', min: 10, max: 250, step: 1, unit: '%', div: 1, get: () => state.size, set: v => state.size = v },
+    'rot':        { name: 'ANGLE', min: -180, max: 180, step: 1, unit: '°', div: 1, get: () => state.rotZ, set: v => state.rotZ = v },
+    'bright':     { name: 'BASE BRIGHT', min: 0, max: 200, step: 1, unit: '%', div: 1, get: () => state.bright, set: v => state.bright = v },
+    'light-soft': { name: 'LIGHT SOFT', min: 10, max: 100, step: 1, unit: '%', div: 1, get: () => state.lightSoftness, set: v => state.lightSoftness = v },
+    'fsh-blur':   { name: 'FLOOR BLUR', min: 0, max: 40, step: 1, unit: 'px', div: 1, get: () => state.floorShadowBlur, set: v => state.floorShadowBlur = v },
+    'fsh-op':     { name: 'FLOOR OPAC', min: 0, max: 100, step: 1, unit: '%', div: 1, get: () => state.floorShadowOp, set: v => state.floorShadowOp = v },
+    'wsh-op':     { name: 'WALL OPAC', min: 0, max: 100, step: 1, unit: '%', div: 1, get: () => state.wallShadowOp, set: v => state.wallShadowOp = v }
+  };
+
+  function toggleMenu() {
+    document.getElementById('side-menu').classList.toggle('is-open');
+  }
+
+  // ★タブ切り替え時はメニューを閉じない (keepMenuOpen = true)
+  function switchTab(target) {
+    state.editTarget = target;
+    document.getElementById('tab-btn-oshi').classList.toggle('active', target === 'oshi');
+    document.getElementById('tab-btn-bg').classList.toggle('active', target === 'bg');
+    
+    document.getElementById('tab-content-oshi').classList.toggle('is-active', target === 'oshi');
+    document.getElementById('tab-content-bg').classList.toggle('is-active', target === 'bg');
+    
+    // タブに連動して左下パネルを切り替えるが、メニュー自体は開いたままにする！
+    selectControl(target === 'oshi' ? 'size' : 'bg-zoom', true);
+  }
+
+  function setBgMode(mode) {
+    state.bgMode = mode;
+    const btnCam = document.getElementById('btn-bg-cam');
+    const btnImg = document.getElementById('btn-bg-img');
+    const chooseBtn = document.getElementById('btn-choose-bg');
+
+    if (mode === 'camera') {
+      btnCam.classList.add('active'); btnImg.classList.remove('active');
+      chooseBtn.style.display = 'none'; bgImg.style.display = 'none';
+      video.style.display = 'block';
+      startCamera();
+    } else {
+      btnCam.classList.remove('active'); btnImg.classList.add('active');
+      chooseBtn.style.display = 'block'; video.style.display = 'none';
+      bgImg.style.display = 'block';
+      stopCamera();
+      if (!bgImg.src || bgImg.src === window.location.href) bgInput.click();
+    }
+    updateStyles();
+  }
+
+  bgInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => { bgImg.src = event.target.result; updateStyles(); };
+    reader.readAsDataURL(file);
+  });
+
+  // ★設定項目を選ぶ関数 (keepMenuOpenがfalseなら閉じる)
+  function selectControl(mode, keepMenuOpen = false) {
+    if (!keepMenuOpen) {
+      document.getElementById('side-menu').classList.remove('is-open');
+    }
+    activeMode = mode;
+
+    const qPanel = document.getElementById('quick-panel');
+    const qJoy = document.getElementById('quick-joy');
+    const qKnob = document.getElementById('quick-joy-knob');
+
+    if (mode === 'wjoy' || mode === 'fjoy' || mode === 'ljoy') {
+      qPanel.classList.remove('is-active'); qJoy.classList.add('is-active');
+      qJoy.className = 'quick-joystick-wrap is-active'; qKnob.className = 'quick-joystick-knob';
+
+      if (mode === 'fjoy') {
+        qJoy.classList.add('pink-theme'); qKnob.classList.add('pink-theme');
+        qKnob.style.transform = `translate(${state.floorShadowJoyX}px, ${state.floorShadowJoyY}px)`;
+      } else if (mode === 'ljoy') {
+        qJoy.classList.add('yellow-theme'); qKnob.classList.add('yellow-theme');
+        qKnob.style.transform = `translate(${state.lightJoyX}px, ${state.lightJoyY}px)`;
+      } else {
+        qKnob.style.transform = `translate(${state.wallShadowX / 1.5}px, ${state.wallShadowY / 1.5}px)`;
+      }
+    } else {
+      qJoy.classList.remove('is-active'); qPanel.classList.add('is-active');
+      const conf = configs[mode];
+      document.getElementById('quick-label-name').textContent = conf.name;
+      const slider = document.getElementById('quick-slider');
+      slider.min = conf.min; slider.max = conf.max; slider.step = conf.step; slider.value = conf.get();
+      updateQuickDisplay();
+    }
+  }
+
+  function updateQuickDisplay() {
+    const conf = configs[activeMode];
+    if (!conf) return;
+    const val = conf.div === 10 ? (conf.get() / 10).toFixed(1) : conf.get();
+    document.getElementById('quick-val-text').textContent = val + conf.unit;
+    const badge = document.getElementById(`badge-${activeMode}`);
+    if (badge) badge.textContent = val + conf.unit;
+  }
+
+  document.getElementById('quick-slider').addEventListener('input', (e) => {
+    const conf = configs[activeMode];
+    if (!conf) return;
+    conf.set(parseFloat(e.target.value));
+    updateQuickDisplay();
+    updateStyles();
+  });
 
   async function startCamera() {
+    if (cameraStream) return;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
+      cameraStream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false
       });
-      video.srcObject = stream;
-    } catch (err) { alert("カメラの起動に失敗しました。\n" + err.message); }
+      video.srcObject = cameraStream;
+    } catch (err) { alert("カメラ起動失敗: " + err.message); }
   }
-  window.addEventListener('load', startCamera);
+  function stopCamera() {
+    if (cameraStream) { cameraStream.getTracks().forEach(track => track.stop()); cameraStream = null; video.srcObject = null; }
+  }
+
+  window.addEventListener('load', () => { startCamera(); });
 
   fileInput.addEventListener('change', (e) => {
     const file = e.target.files[0];
@@ -266,293 +485,265 @@
       floorImg.src = event.target.result;
       overlayContainer.style.display = 'block';
       
+      document.getElementById('studio-controls').style.display = 'flex';
+      
       mainImg.onload = () => {
-        const initialWidth = window.innerWidth * 0.5; 
-        overlayContainer.style.width = initialWidth + 'px';
-        overlayContainer.style.height = (mainImg.naturalHeight * (initialWidth / mainImg.naturalWidth)) + 'px';
-        overlayContainer.style.left = '50%';
-        overlayContainer.style.top = '50%';
-        resetState();
+        const initW = window.innerWidth * 0.45; 
+        overlayContainer.style.width = initW + 'px';
+        overlayContainer.style.height = (mainImg.naturalHeight * (initW / mainImg.naturalWidth)) + 'px';
+        
+        state.oshiX = window.innerWidth / 2; state.oshiY = window.innerHeight / 2;
+        
+        mainWrapper.style.webkitMaskImage = `url(${mainImg.src})`;
+        mainWrapper.style.webkitMaskSize = '100% 100%';
+        mainWrapper.style.maskImage = `url(${mainImg.src})`;
+        mainWrapper.style.maskSize = '100% 100%';
+
+        switchTab('oshi');
+        updateStyles();
       };
     };
     reader.readAsDataURL(file);
   });
 
-  function updateImageStyle() {
-    // コンテナ全体の回転とサイズ
+  function updateStyles() {
+    const bgTransform = `translate(calc(-50% + ${state.bgX}px), calc(-50% + ${state.bgY}px)) scale(${state.bgZoom})`;
+    const bgFilter = `brightness(${state.bgBright}%) blur(${state.bgBlur}px)`;
+    video.style.transform = bgTransform; video.style.filter = bgFilter;
+    bgImg.style.transform = bgTransform; bgImg.style.filter = bgFilter;
+
+    overlayContainer.style.left = state.oshiX + 'px';
+    overlayContainer.style.top = state.oshiY + 'px';
     overlayContainer.style.transform = `translate(-50%, -50%) rotateZ(${state.rotZ}deg) scale(${state.size / 100})`;
     
-    // メイン画像の明るさと壁影（ドロップシャドウ）
-    let mFilter = `brightness(${state.bright}%)`;
+    // ★ ベースの明るさは「画像本体」だけに適用（分離）
+    mainImg.style.filter = `brightness(${state.bright}%)`;
+    
+    // ★ 壁影は「ラッパー」にかける
     if (state.wallShadow) {
-      const a = state.wallShadowOp / 100;
       const blur = Math.sqrt(state.wallShadowX**2 + state.wallShadowY**2) * 0.8;
-      mFilter += ` drop-shadow(${state.wallShadowX}px ${state.wallShadowY}px ${blur}px rgba(0,0,0,${a}))`;
+      mainWrapper.style.filter = `drop-shadow(${state.wallShadowX}px ${state.wallShadowY}px ${blur}px rgba(0,0,0,${state.wallShadowOp/100}))`;
+    } else {
+      mainWrapper.style.filter = 'none';
     }
-    mainImg.style.filter = mFilter;
 
-    // 床影の適用
+    // ★ ライティング（ベースの明るさに影響されず、ハードライトで強く光る！）
+    if (state.lighting) {
+      lightOverlay.style.opacity = 1;
+      const angleRad = Math.atan2(state.lightJoyY, state.lightJoyX);
+      const angleDeg = (angleRad * 180 / Math.PI) + 90;
+      const dist = Math.sqrt(state.lightJoyX**2 + state.lightJoyY**2);
+      const intensity = Math.min(1, dist / 26);
+      
+      const whiteStop = Math.max(10, 60 - (state.lightSoftness * 0.5));
+      const blackStop = Math.min(95, 40 + (state.lightSoftness * 0.5));
+      
+      lightOverlay.style.background = `linear-gradient(${angleDeg}deg, 
+        rgba(255,255,255,${intensity * 0.9}) 0%, 
+        rgba(255,255,255,${intensity * 0.4}) ${whiteStop}%, 
+        rgba(0,0,0,0) 50%, 
+        rgba(0,0,0,${intensity * 0.5}) ${blackStop}%, 
+        rgba(0,0,0,${intensity * 0.9}) 100%)`;
+    } else {
+      lightOverlay.style.opacity = 0;
+    }
+
     if (state.floorShadow) {
       floorImg.style.display = 'block';
-      floorImg.style.transform = `skewX(${state.floorShadowAngle}deg) scaleY(${state.floorShadowLen / 100})`;
+      const lenScale = (state.floorShadowJoyY / 26) * 1.5;
+      const skewDeg = (state.floorShadowJoyX / 26) * 60;
+      floorImg.style.transform = `skewX(${skewDeg}deg) scaleY(${lenScale})`;
       floorImg.style.filter = `brightness(0) blur(${state.floorShadowBlur}px) opacity(${state.floorShadowOp / 100})`;
     } else {
       floorImg.style.display = 'none';
     }
   }
 
-  function bindSlider(id, stateKey, valId, unit) {
-    document.getElementById(id).addEventListener('input', (e) => {
-      state[stateKey] = parseInt(e.target.value);
-      document.getElementById(valId).textContent = state[stateKey] + unit;
-      updateImageStyle();
-    });
-  }
-  
-  // 基本
-  bindSlider('sl-size', 'size', 'val-size', '%');
-  bindSlider('sl-rot', 'rotZ', 'val-rot', '°');
-  bindSlider('sl-bright', 'bright', 'val-bright', '%');
-  // 床影
-  bindSlider('sl-fsh-len', 'floorShadowLen', 'val-fsh-len', '%');
-  bindSlider('sl-fsh-ang', 'floorShadowAngle', 'val-fsh-ang', '°');
-  bindSlider('sl-fsh-blur', 'floorShadowBlur', 'val-fsh-blur', 'px');
-  bindSlider('sl-fsh-op', 'floorShadowOp', 'val-fsh-op', '%');
-  // 壁影
-  bindSlider('sl-sh-op', 'wallShadowOp', 'val-sh-op', '%');
+  function setLighting(on) { state.lighting = on; document.getElementById('btn-light-on').classList.toggle('active', on); document.getElementById('btn-light-off').classList.toggle('active', !on); updateStyles(); }
+  function setWallShadow(on) { state.wallShadow = on; document.getElementById('btn-wshadow-on').classList.toggle('active', on); document.getElementById('btn-wshadow-off').classList.toggle('active', !on); updateStyles(); }
+  function setFloorShadow(on) { state.floorShadow = on; document.getElementById('btn-fshadow-on').classList.toggle('active', on); document.getElementById('btn-fshadow-off').classList.toggle('active', !on); updateStyles(); }
 
-  function setWallShadow(isOn) {
-    state.wallShadow = isOn;
-    document.getElementById('btn-shadow-on').classList.toggle('active', isOn);
-    document.getElementById('btn-shadow-off').classList.toggle('active', !isOn);
-    const ctrls = document.getElementById('shadow-controls');
-    ctrls.style.display = isOn ? 'flex' : 'none';
-    setTimeout(() => { ctrls.style.opacity = isOn ? 1 : 0; }, 10);
-    updateImageStyle();
-  }
+  /* --- ジョイスティック --- */
+  const qJoy = document.getElementById('quick-joy');
+  const qKnob = document.getElementById('quick-joy-knob');
+  let joyActive = false;
+  const maxJoyR = 26;
 
-  function setFloorShadow(isOn) {
-    state.floorShadow = isOn;
-    document.getElementById('btn-fshadow-on').classList.toggle('active', isOn);
-    document.getElementById('btn-fshadow-off').classList.toggle('active', !isOn);
-    const ctrls = document.getElementById('fshadow-controls');
-    ctrls.style.display = isOn ? 'flex' : 'none';
-    setTimeout(() => { ctrls.style.opacity = isOn ? 1 : 0; }, 10);
-    updateImageStyle();
-  }
-
-  function resetState() {
-    state = { size: 100, rotZ: 0, bright: 100, wallShadow: false, wallShadowOp: 50, wallShadowX: 15, wallShadowY: 15, floorShadow: false, floorShadowOp: 60, floorShadowLen: -80, floorShadowAngle: 20, floorShadowBlur: 5 };
-    ['size','rot','bright','sh-op','fsh-len','fsh-ang','fsh-blur','fsh-op'].forEach(k => {
-      const el = document.getElementById(`sl-${k}`);
-      if(el) el.value = state[k.replace('-','')]; // IDとstateKeyが一部違うので強引だが初期値はHTMLに合わせる
-    });
-    const knob = document.getElementById('joy-knob');
-    knob.style.transform = `translate(15px, 15px)`;
-    setWallShadow(false);
-    setFloorShadow(false);
-  }
-
-  /* --- ジョイスティック (壁影用) --- */
-  const joyContainer = document.getElementById('joy-container');
-  const joyKnob = document.getElementById('joy-knob');
-  let joyActive = false, joyCenterX, joyCenterY;
-  const maxJoyRadius = 40;
-
-  function handleJoyMove(e) {
+  function handleJoy(e) {
     if (!joyActive) return;
     e.preventDefault();
     const t = e.touches ? e.touches[0] : e;
-    const rect = joyContainer.getBoundingClientRect();
-    joyCenterX = rect.left + rect.width / 2; joyCenterY = rect.top + rect.height / 2;
-    let dx = t.clientX - joyCenterX; let dy = t.clientY - joyCenterY;
-    const distance = Math.sqrt(dx * dx + dy * dy);
-    if (distance > maxJoyRadius) { dx = (dx / distance) * maxJoyRadius; dy = (dy / distance) * maxJoyRadius; }
-    joyKnob.style.transform = `translate(${dx}px, ${dy}px)`;
-    state.wallShadowX = dx; state.wallShadowY = dy;
-    updateImageStyle();
-  }
-  joyContainer.addEventListener('mousedown', (e) => { joyActive = true; handleJoyMove(e); });
-  window.addEventListener('mousemove', handleJoyMove);
-  window.addEventListener('mouseup', () => { joyActive = false; });
-  joyContainer.addEventListener('touchstart', (e) => { joyActive = true; handleJoyMove(e); }, { passive: false });
-  window.addEventListener('touchmove', handleJoyMove, { passive: false });
-  window.addEventListener('touchend', () => { joyActive = false; });
+    const rect = qJoy.getBoundingClientRect();
+    let dx = t.clientX - (rect.left + rect.width / 2);
+    let dy = t.clientY - (rect.top + rect.height / 2);
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist > maxJoyR) { dx = (dx / dist) * maxJoyR; dy = (dy / dist) * maxJoyR; }
+    
+    qKnob.style.transform = `translate(${dx}px, ${dy}px)`;
 
-  /* --- 画像のドラッグ処理 --- */
-  let isImgDragging = false, startX, startY, initialLeft, initialTop;
+    if (activeMode === 'fjoy') {
+      state.floorShadowJoyX = dx; state.floorShadowJoyY = dy;
+    } else if (activeMode === 'ljoy') {
+      state.lightJoyX = dx; state.lightJoyY = dy;
+    } else {
+      state.wallShadowX = dx * 1.5; state.wallShadowY = dy * 1.5;
+    }
+    updateStyles();
+  }
+  qJoy.addEventListener('mousedown', (e) => { joyActive = true; handleJoy(e); });
+  window.addEventListener('mousemove', handleJoy); window.addEventListener('mouseup', () => { joyActive = false; });
+  qJoy.addEventListener('touchstart', (e) => { joyActive = true; handleJoy(e); }, { passive: false });
+  window.addEventListener('touchmove', handleJoy, { passive: false }); window.addEventListener('touchend', () => { joyActive = false; });
+
+  /* --- タブ連動ドラッグ移動 --- */
+  let isDragging = false, startX, startY, initBgX, initBgY, initOshiX, initOshiY;
   function onDragStart(e) {
-    if (!e.target.closest('#overlay-container')) return;
-    e.preventDefault();
-    isImgDragging = true;
+    if (e.target.closest('.bottom-bar') || e.target.closest('.side-panel') || e.target.closest('.menu-toggle-btn')) return;
+    e.preventDefault(); isDragging = true;
     const t = e.touches ? e.touches[0] : e;
     startX = t.clientX; startY = t.clientY;
-    initialLeft = parseFloat(overlayContainer.style.left) || window.innerWidth / 2;
-    initialTop = parseFloat(overlayContainer.style.top) || window.innerHeight / 2;
+    if (state.editTarget === 'bg') { initBgX = state.bgX; initBgY = state.bgY; }
+    else { initOshiX = state.oshiX; initOshiY = state.oshiY; }
   }
   function onDragMove(e) {
-    if (!isImgDragging) return;
+    if (!isDragging) return;
     e.preventDefault();
     const t = e.touches ? e.touches[0] : e;
-    overlayContainer.style.left = (initialLeft + (t.clientX - startX)) + 'px';
-    overlayContainer.style.top = (initialTop + (t.clientY - startY)) + 'px';
+    const dx = t.clientX - startX; const dy = t.clientY - startY;
+    
+    if (state.editTarget === 'bg') { state.bgX = initBgX + dx; state.bgY = initBgY + dy; }
+    else { state.oshiX = initOshiX + dx; state.oshiY = initOshiY + dy; }
+    updateStyles();
   }
-  function onDragEnd() { isImgDragging = false; }
-  
-  overlayContainer.addEventListener('mousedown', onDragStart);
-  window.addEventListener('mousemove', onDragMove);
-  window.addEventListener('mouseup', onDragEnd);
-  overlayContainer.addEventListener('touchstart', onDragStart, { passive: false });
-  window.addEventListener('touchmove', onDragMove, { passive: false });
-  window.addEventListener('touchend', onDragEnd);
+  function onDragEnd() { isDragging = false; }
 
+  touchLayer.addEventListener('mousedown', onDragStart); window.addEventListener('mousemove', onDragMove); window.addEventListener('mouseup', onDragEnd);
+  touchLayer.addEventListener('touchstart', onDragStart, { passive: false }); window.addEventListener('touchmove', onDragMove, { passive: false }); window.addEventListener('touchend', onDragEnd);
 
-  /* --- キャンバス描画共通処理 (エクスポート＆撮影) --- */
-  function drawOverlayToCtx(ctx, isExport) {
+  /* --- キャラ＆影＆ライト Canvas描画ロジック --- */
+  function drawOverlayToCtx(ctx) {
     const origW = mainImg.naturalWidth;
     const origH = mainImg.naturalHeight;
-
     ctx.rotate(state.rotZ * Math.PI / 180);
+    const baseScale = parseFloat(overlayContainer.style.width) / origW;
+    ctx.scale(baseScale * (state.size / 100), baseScale * (state.size / 100));
 
-    if (isExport) {
-      ctx.scale(state.size / 100, state.size / 100);
-    } else {
-      const baseScale = parseFloat(overlayContainer.style.width) / origW;
-      ctx.scale(baseScale * (state.size / 100), baseScale * (state.size / 100));
-    }
-
-    // 床影を描画
+    // 床影
     if (state.floorShadow) {
       ctx.save();
       ctx.globalAlpha = state.floorShadowOp / 100;
       ctx.filter = `brightness(0) blur(${state.floorShadowBlur}px)`;
-      ctx.translate(0, origH / 2); // 足元を支点に
-      const tanAngle = Math.tan(state.floorShadowAngle * Math.PI / 180);
-      ctx.transform(1, 0, tanAngle, state.floorShadowLen / 100, 0, 0);
+      ctx.translate(0, origH / 2);
+      ctx.transform(1, 0, Math.tan((state.floorShadowJoyX / 26) * 60 * Math.PI / 180), (state.floorShadowJoyY / 26) * 1.5, 0, 0);
       ctx.drawImage(mainImg, -origW / 2, -origH, origW, origH);
       ctx.restore();
     }
 
-    // メイン画像を描画
+    // ★ 描画用の一時キャンバスを作成して、ライティングをキレイに合成する
+    const charCanvas = document.createElement('canvas');
+    charCanvas.width = origW; charCanvas.height = origH;
+    const cCtx = charCanvas.getContext('2d');
+
+    // ベースの明るさだけを適用してキャラを描画
+    cCtx.filter = `brightness(${state.bright}%)`;
+    cCtx.drawImage(mainImg, 0, 0, origW, origH);
+
+    // ライティング (ハードライト合成)
+    if (state.lighting) {
+      const gradCanvas = document.createElement('canvas');
+      gradCanvas.width = origW; gradCanvas.height = origH;
+      const gCtx = gradCanvas.getContext('2d');
+      
+      // キャラクターの形を作る
+      gCtx.drawImage(mainImg, 0, 0, origW, origH);
+      gCtx.globalCompositeOperation = 'source-in'; // 塗りをキャラの形に限定する
+      
+      const angleRad = Math.atan2(state.lightJoyY, state.lightJoyX);
+      const intensity = Math.min(1, Math.sqrt(state.lightJoyX**2 + state.lightJoyY**2) / 26);
+      
+      const x1 = origW/2 - Math.cos(angleRad) * (origW / 2);
+      const y1 = origH/2 - Math.sin(angleRad) * (origH / 2);
+      const x2 = origW/2 + Math.cos(angleRad) * (origW / 2);
+      const y2 = origH/2 + Math.sin(angleRad) * (origH / 2);
+
+      const grad = gCtx.createLinearGradient(x1, y1, x2, y2);
+      const whiteStop = Math.max(0.1, 0.6 - (state.lightSoftness * 0.005));
+      const blackStop = Math.min(0.95, 0.4 + (state.lightSoftness * 0.005));
+
+      grad.addColorStop(0, `rgba(255, 255, 255, ${intensity * 0.9})`);
+      grad.addColorStop(whiteStop, `rgba(255, 255, 255, ${intensity * 0.4})`);
+      grad.addColorStop(0.5, `rgba(0, 0, 0, 0)`);
+      grad.addColorStop(blackStop, `rgba(0, 0, 0, ${intensity * 0.5})`);
+      grad.addColorStop(1, `rgba(0, 0, 0, ${intensity * 0.9})`);
+
+      gCtx.fillStyle = grad;
+      gCtx.fillRect(0, 0, origW, origH);
+
+      // 一時キャンバスにハードライトで重ね合わせ！
+      cCtx.globalCompositeOperation = 'hard-light';
+      cCtx.drawImage(gradCanvas, 0, 0, origW, origH);
+    }
+
+    // 完成したキャラをメインキャンバスへ (壁影と一緒に)
     ctx.save();
-    let mFilter = `brightness(${state.bright}%)`;
     if (state.wallShadow) {
-      // キャンバスでのドロップシャドウ
       const blur = Math.sqrt(state.wallShadowX**2 + state.wallShadowY**2) * 0.8;
-      // エクスポート時はdpr不要、撮影時は縮尺に合わせた影になるように調整
-      const sX = isExport ? state.wallShadowX : state.wallShadowX;
-      const sY = isExport ? state.wallShadowY : state.wallShadowY;
-      mFilter += ` drop-shadow(${sX}px ${sY}px ${blur}px rgba(0,0,0,${state.wallShadowOp/100}))`;
+      ctx.filter = `drop-shadow(${state.wallShadowX}px ${state.wallShadowY}px ${blur}px rgba(0,0,0,${state.wallShadowOp/100}))`;
     }
-    ctx.filter = mFilter;
-    ctx.drawImage(mainImg, -origW / 2, -origH / 2, origW, origH);
+    ctx.drawImage(charCanvas, -origW / 2, -origH / 2, origW, origH);
     ctx.restore();
   }
 
-  /* --- 透明ピクセルを自動トリミングする最強関数 --- */
-  function trimCanvas(canvas) {
-    const ctx = canvas.getContext('2d');
-    const width = canvas.width;
-    const height = canvas.height;
-    const pixels = ctx.getImageData(0, 0, width, height);
-    const l = pixels.data.length;
-    let bound = { top: null, left: null, right: null, bottom: null };
-
-    for (let i = 0; i < l; i += 4) {
-      if (pixels.data[i + 3] !== 0) { // 透明じゃないピクセルを発見
-        let x = (i / 4) % width;
-        let y = Math.floor((i / 4) / width);
-        if (bound.top === null) bound.top = y;
-        if (bound.left === null || x < bound.left) bound.left = x;
-        if (bound.right === null || x > bound.right) bound.right = x;
-        if (bound.bottom === null || y > bound.bottom) bound.bottom = y;
-      }
-    }
-    if (bound.top === null) return canvas; // 全部透明ならそのまま返す
-
-    const trimWidth = bound.right - bound.left + 1;
-    const trimHeight = bound.bottom - bound.top + 1;
-    const trimmed = document.createElement('canvas');
-    trimmed.width = trimWidth;
-    trimmed.height = trimHeight;
-    trimmed.getContext('2d').putImageData(ctx.getImageData(bound.left, bound.top, trimWidth, trimHeight), 0, 0);
-    return trimmed;
-  }
-
-  /* --- 高画質で透過PNG保存 (自動トリミング付き) --- */
-  function exportTransformedImage() {
+  /* --- 撮影＆保存 --- */
+  async function takePhoto() {
     if (!mainImg.src || overlayContainer.style.display === 'none') {
-      alert("画像を読み込んでください！"); return;
+      alert("まずは推し画像を読み込んでね！"); return;
     }
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    
-    // 超巨大なキャンバスを用意して見切れを防ぐ
-    const maxDim = Math.max(mainImg.naturalWidth, mainImg.naturalHeight) * 4;
-    canvas.width = maxDim;
-    canvas.height = maxDim;
-    
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
-    
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.save();
-    ctx.translate(canvas.width / 2, canvas.height / 2);
-    
-    drawOverlayToCtx(ctx, true);
-    ctx.restore();
-
-    // 余白を自動でトリミング！
-    const finalCanvas = trimCanvas(canvas);
-
-    const link = document.createElement('a');
-    link.href = finalCanvas.toDataURL('image/png');
-    link.download = `high_res_chara_${new Date().getTime()}.png`;
-    document.body.appendChild(link); link.click(); document.body.removeChild(link);
-  }
-
-  /* --- 撮影処理 (背景カメラ ＋ AR合成) --- */
-  function takePhoto() {
-    if (!mainImg.src || overlayContainer.style.display === 'none') {
-      alert("画像を読み込んでください！"); return;
+    if (state.bgMode === 'image' && (!bgImg.src || bgImg.src === window.location.href)) {
+      alert("背景画像を選択してね！"); return;
     }
+
     const flash = document.getElementById('flash');
-    flash.style.opacity = 1; setTimeout(() => { flash.style.opacity = 0; }, 150);
+    flash.style.opacity = 1; setTimeout(() => { flash.style.opacity = 0; }, 120);
 
     const canvas = document.getElementById('capture-canvas');
     const ctx = canvas.getContext('2d');
     const dpr = window.devicePixelRatio || 2;
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
+    const vw = window.innerWidth; const vh = window.innerHeight;
     canvas.width = vw * dpr; canvas.height = vh * dpr;
 
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
+    ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
 
-    // カメラ背景を描画
-    const vRatio = video.videoWidth / video.videoHeight;
-    const sRatio = vw / vh;
-    let dW, dH, dX, dY;
-    if (vRatio > sRatio) { dH = vh; dW = vh * vRatio; dX = (vw - dW) / 2; dY = 0; }
-    else { dW = vw; dH = vw / vRatio; dX = 0; dY = (vh - dH) / 2; }
-    ctx.drawImage(video, dX * dpr, dY * dpr, dW * dpr, dH * dpr);
+    const source = state.bgMode === 'camera' ? video : bgImg;
+    const srcW = state.bgMode === 'camera' ? video.videoWidth : bgImg.naturalWidth;
+    const srcH = state.bgMode === 'camera' ? video.videoHeight : bgImg.naturalHeight;
 
-    // キャラクター＆影の描画
-    const rect = overlayContainer.getBoundingClientRect();
-    const centerX = rect.left + rect.width / 2;
-    const centerY = rect.top + rect.height / 2;
+    const sRatio = vw / vh; const srcRatio = srcW / srcH;
+    let dW, dH;
+    if (srcRatio > sRatio) { dH = vh; dW = vh * srcRatio; } else { dW = vw; dH = vw / srcRatio; }
 
     ctx.save();
-    ctx.translate(centerX * dpr, centerY * dpr);
-    ctx.scale(dpr, dpr); // 画面のピクセル比率に合わせて拡大
-
-    drawOverlayToCtx(ctx, false);
+    ctx.translate((vw * dpr) / 2 + state.bgX * dpr, (vh * dpr) / 2 + state.bgY * dpr);
+    ctx.scale(state.bgZoom, state.bgZoom);
+    ctx.filter = `brightness(${state.bgBright}%) blur(${state.bgBlur * dpr}px)`;
+    ctx.drawImage(source, (-dW / 2) * dpr, (-dH / 2) * dpr, dW * dpr, dH * dpr);
     ctx.restore();
 
-    const link = document.createElement('a');
-    link.href = canvas.toDataURL('image/jpeg', 1.0);
-    link.download = `ar_camera_${new Date().getTime()}.jpg`;
-    document.body.appendChild(link); link.click(); document.body.removeChild(link);
+    ctx.save();
+    ctx.translate(state.oshiX * dpr, state.oshiY * dpr);
+    ctx.scale(dpr, dpr);
+    drawOverlayToCtx(ctx);
+    ctx.restore();
+
+    canvas.toBlob(async (blob) => {
+      const fileName = `studio_photo_${Date.now()}.jpg`;
+      const file = new File([blob], fileName, { type: 'image/jpeg' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try { await navigator.share({ files: [file], title: 'AR撮影写真' }); } catch (err) { if (err.name !== 'AbortError') alert("保存に失敗しました: " + err.message); }
+      } else {
+        const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = fileName; link.click();
+      }
+    }, 'image/jpeg', 0.95);
   }
 </script>
 </body>
