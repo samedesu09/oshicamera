@@ -15,15 +15,25 @@
     position: fixed; top: 0; left: 0;
   }
 
-  /* 背景用：カメラ＆静止画 (中央配置でドラッグ・ズーム対応) */
+  /* 背景レイヤー */
+  #bg-wrapper {
+    position: absolute; top: 0; left: 0; width: 100vw; height: 100dvh;
+    z-index: 1; overflow: hidden;
+  }
+  /* 背景用：カメラ＆静止画 */
   #camera-preview, #bg-image-preview {
     position: absolute; top: 50%; left: 50%;
     width: 100vw; height: 100dvh;
-    object-fit: cover; z-index: 1;
+    object-fit: cover;
     transform: translate(-50%, -50%);
     transform-origin: center center;
   }
   #bg-image-preview { display: none; }
+  /* 背景用：単色カラー */
+  #bg-color-preview {
+    position: absolute; top: 0; left: 0; width: 100vw; height: 100dvh;
+    background-color: #00ff00; display: none;
+  }
 
   /* 画面全体のドラッグ判定用レイヤー */
   #touch-layer {
@@ -55,11 +65,18 @@
     pointer-events: none;
   }
 
-  /* ★ライティング用グラデーション (ハードライト合成で強烈な光を表現) */
+  /* ★ライティング用グラデーション (ハードライト合成) */
   #lighting-overlay {
     position: absolute; top: 0; left: 0; width: 100%; height: 100%;
     pointer-events: none; mix-blend-mode: hard-light; opacity: 0;
     transition: opacity 0.2s;
+  }
+
+  /* 背景用の環境光グラデーション */
+  #bg-lighting-overlay {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    pointer-events: none; mix-blend-mode: overlay; opacity: 0;
+    transition: opacity 0.2s; z-index: 2;
   }
 
   /* 下部コントロールバー */
@@ -123,6 +140,7 @@
   .quick-joystick-wrap.is-active { display: flex; }
   .quick-joystick-wrap.pink-theme { border-color: rgba(255, 42, 109, 0.5); }
   .quick-joystick-wrap.yellow-theme { border-color: rgba(255, 215, 0, 0.6); box-shadow: 0 0 15px rgba(255, 215, 0, 0.2); }
+  .quick-joystick-wrap.purple-theme { border-color: rgba(170, 0, 255, 0.6); box-shadow: 0 0 15px rgba(170, 0, 255, 0.3); }
   
   .quick-joystick-knob {
     width: 28px; height: 28px; border-radius: 50%;
@@ -130,6 +148,7 @@
   }
   .quick-joystick-knob.pink-theme { background: #ff2a6d; box-shadow: 0 0 10px #ff2a6d; }
   .quick-joystick-knob.yellow-theme { background: #ffd700; box-shadow: 0 0 12px #ffd700; }
+  .quick-joystick-knob.purple-theme { background: #aa00ff; box-shadow: 0 0 15px #aa00ff; }
 
   /* スライダー */
   input[type="range"] { appearance: none; width: 100%; height: 5px; background: rgba(255,255,255,0.2); border-radius: 3px; outline: none; margin: 4px 0; }
@@ -165,6 +184,9 @@
   .menu-item-btn.pink-item span { color: #ff758c; }
   .menu-item-btn.yellow-item:active { background: rgba(255, 215, 0, 0.2); border-color: #ffd700; color: #ffd700; }
   .menu-item-btn.yellow-item span { color: #ffd700; }
+  .menu-item-btn.purple-item { border-color: rgba(170, 0, 255, 0.4); background: rgba(170, 0, 255, 0.1); }
+  .menu-item-btn.purple-item:active { background: rgba(170, 0, 255, 0.3); border-color: #aa00ff; color: #d580ff; }
+  .menu-item-btn.purple-item span { color: #d580ff; }
 
   .btn-action {
     padding: 11px; border-radius: 8px; font-size: 0.75rem; font-weight: bold; cursor: pointer;
@@ -204,8 +226,12 @@
 </head>
 <body>
 
-<video id="camera-preview" autoplay playsinline></video>
-<img id="bg-image-preview" src="" alt="bg">
+<div id="bg-wrapper">
+  <video id="camera-preview" autoplay playsinline></video>
+  <img id="bg-image-preview" src="" alt="bg">
+  <div id="bg-color-preview"></div>
+  <div id="bg-lighting-overlay"></div>
+</div>
 
 <!-- ドラッグ検知用レイヤー（全画面） -->
 <div id="touch-layer"></div>
@@ -220,9 +246,10 @@
 
 <div id="flash"></div>
 
-<!-- ファイル読み込み用 -->
+<!-- ファイル読み込み・カラー設定用 -->
 <input type="file" id="image-loader" accept="image/png, image/jpeg, image/gif" style="display: none;">
 <input type="file" id="bg-loader" accept="image/png, image/jpeg, image/webp" style="display: none;">
+<input type="color" id="color-picker" style="display: none;" value="#00ff00">
 
 <!-- 下部コントロールバー -->
 <div class="bottom-bar">
@@ -256,9 +283,11 @@
   <div class="menu-section-title">BACKGROUND MODE (背景)</div>
   <div class="toggle-row">
     <button class="toggle-btn blue active" id="btn-bg-cam" onclick="setBgMode('camera')">📷 カメラ</button>
-    <button class="toggle-btn blue" id="btn-bg-img" onclick="setBgMode('image')">🖼️ 背景選択</button>
+    <button class="toggle-btn blue" id="btn-bg-img" onclick="setBgMode('image')">🖼️ 画像</button>
+    <button class="toggle-btn blue" id="btn-bg-col" onclick="setBgMode('color')">🎨 単色</button>
   </div>
   <button class="btn-action btn-bg-select" id="btn-choose-bg" style="display: none;" onclick="document.getElementById('bg-loader').click()">📁 背景写真を選択</button>
+  <button class="btn-action btn-bg-select" id="btn-choose-col" style="display: none;" onclick="document.getElementById('color-picker').click()">🎨 背景カラーを変更</button>
   
   <hr style="border:0; border-top:1px dashed rgba(255,255,255,0.15); margin: 6px 0;">
 
@@ -268,7 +297,6 @@
   <div id="studio-controls" style="display: none; flex-direction: column; gap: 12px; margin-top: 10px;">
     
     <div class="tab-container">
-      <!-- ★タブのクリック時はメニューを閉じない！ -->
       <button class="tab-btn active" id="tab-btn-oshi" onclick="switchTab('oshi')">✨ 推し調整</button>
       <button class="tab-btn" id="tab-btn-bg" onclick="switchTab('bg')">🌆 背景調整</button>
     </div>
@@ -312,7 +340,10 @@
       <button class="menu-item-btn" onclick="selectControl('bg-zoom')">🔍 ZOOM (倍率)<span id="badge-bg-zoom">1.0x</span></button>
       <button class="menu-item-btn" onclick="selectControl('bg-blur')">💧 BLUR (被写界深度)<span id="badge-bg-blur">0px</span></button>
       <button class="menu-item-btn" onclick="selectControl('bg-bright')">☀️ BRIGHT (明るさ)<span id="badge-bg-bright">100%</span></button>
-      <p style="font-size: 0.7rem; color: #aaa; margin-top: 10px;">💡 ヒント: 背景調整タブを選んでいる時は、画面をスワイプすると背景の位置を動かせるよ！</p>
+      
+      <div class="menu-section-title" style="color: #d580ff; margin-top: 15px;">GLOBAL LIGHTING (光と影の全同期)</div>
+      <button class="menu-item-btn purple-item" onclick="selectControl('gjoy')">🌍 DIRECTION & SYNC (全連動)<span>🕹️</span></button>
+      <p style="font-size: 0.7rem; color: #aaa; margin-top: 8px;">💡 ヒント: 背景調整タブを選んでいる時は、画面をスワイプすると背景の位置を動かせるよ！</p>
     </div>
 
   </div>
@@ -323,29 +354,34 @@
 <script>
   const video = document.getElementById('camera-preview');
   const bgImg = document.getElementById('bg-image-preview');
+  const bgColorPreview = document.getElementById('bg-color-preview');
   const overlayContainer = document.getElementById('overlay-container');
   const mainWrapper = document.getElementById('main-wrapper');
   const mainImg = document.getElementById('main-overlay-img');
   const lightOverlay = document.getElementById('lighting-overlay');
+  const bgLightOverlay = document.getElementById('bg-lighting-overlay');
   const floorImg = document.getElementById('floor-shadow-img');
   
   const fileInput = document.getElementById('image-loader');
   const bgInput = document.getElementById('bg-loader');
+  const colorPicker = document.getElementById('color-picker');
   const touchLayer = document.getElementById('touch-layer');
 
   let cameraStream = null;
 
   // アプリの状態
   let state = {
-    bgMode: 'camera', // 'camera' or 'image'
-    editTarget: 'oshi', // 'oshi' or 'bg'
+    bgMode: 'camera', // 'camera', 'image', or 'color'
+    bgColor: '#00ff00', // 単色背景用カラー
+    editTarget: 'oshi',
     
     bgZoom: 1.0, bgX: 0, bgY: 0, bgBlur: 0, bgBright: 100,
 
     size: 100, rotZ: 0, bright: 100, oshiX: 0, oshiY: 0,
     lighting: false, lightJoyX: 18, lightJoyY: -18, lightSoftness: 50,
     wallShadow: false, wallShadowOp: 50, wallShadowX: 15, wallShadowY: 15,
-    floorShadow: false, floorShadowOp: 60, floorShadowBlur: 5, floorShadowJoyX: 10, floorShadowJoyY: -22
+    floorShadow: false, floorShadowOp: 60, floorShadowBlur: 5, floorShadowJoyX: -18, floorShadowJoyY: 18,
+    globalLightActive: false, globalLightX: 18, globalLightY: -18
   };
 
   let activeMode = 'size';
@@ -368,7 +404,6 @@
     document.getElementById('side-menu').classList.toggle('is-open');
   }
 
-  // ★タブ切り替え時はメニューを閉じない (keepMenuOpen = true)
   function switchTab(target) {
     state.editTarget = target;
     document.getElementById('tab-btn-oshi').classList.toggle('active', target === 'oshi');
@@ -377,7 +412,6 @@
     document.getElementById('tab-content-oshi').classList.toggle('is-active', target === 'oshi');
     document.getElementById('tab-content-bg').classList.toggle('is-active', target === 'bg');
     
-    // タブに連動して左下パネルを切り替えるが、メニュー自体は開いたままにする！
     selectControl(target === 'oshi' ? 'size' : 'bg-zoom', true);
   }
 
@@ -385,19 +419,33 @@
     state.bgMode = mode;
     const btnCam = document.getElementById('btn-bg-cam');
     const btnImg = document.getElementById('btn-bg-img');
-    const chooseBtn = document.getElementById('btn-choose-bg');
+    const btnCol = document.getElementById('btn-bg-col');
+    const chooseBg = document.getElementById('btn-choose-bg');
+    const chooseCol = document.getElementById('btn-choose-col');
+
+    btnCam.classList.toggle('active', mode === 'camera');
+    btnImg.classList.toggle('active', mode === 'image');
+    btnCol.classList.toggle('active', mode === 'color');
+
+    chooseBg.style.display = mode === 'image' ? 'block' : 'none';
+    chooseCol.style.display = mode === 'color' ? 'block' : 'none';
 
     if (mode === 'camera') {
-      btnCam.classList.add('active'); btnImg.classList.remove('active');
-      chooseBtn.style.display = 'none'; bgImg.style.display = 'none';
+      bgImg.style.display = 'none';
+      bgColorPreview.style.display = 'none';
       video.style.display = 'block';
       startCamera();
-    } else {
-      btnCam.classList.remove('active'); btnImg.classList.add('active');
-      chooseBtn.style.display = 'block'; video.style.display = 'none';
+    } else if (mode === 'image') {
+      video.style.display = 'none';
+      bgColorPreview.style.display = 'none';
       bgImg.style.display = 'block';
       stopCamera();
       if (!bgImg.src || bgImg.src === window.location.href) bgInput.click();
+    } else {
+      video.style.display = 'none';
+      bgImg.style.display = 'none';
+      bgColorPreview.style.display = 'block';
+      stopCamera();
     }
     updateStyles();
   }
@@ -410,7 +458,11 @@
     reader.readAsDataURL(file);
   });
 
-  // ★設定項目を選ぶ関数 (keepMenuOpenがfalseなら閉じる)
+  colorPicker.addEventListener('input', (e) => {
+    state.bgColor = e.target.value;
+    bgColorPreview.style.backgroundColor = state.bgColor;
+  });
+
   function selectControl(mode, keepMenuOpen = false) {
     if (!keepMenuOpen) {
       document.getElementById('side-menu').classList.remove('is-open');
@@ -421,7 +473,7 @@
     const qJoy = document.getElementById('quick-joy');
     const qKnob = document.getElementById('quick-joy-knob');
 
-    if (mode === 'wjoy' || mode === 'fjoy' || mode === 'ljoy') {
+    if (mode === 'wjoy' || mode === 'fjoy' || mode === 'ljoy' || mode === 'gjoy') {
       qPanel.classList.remove('is-active'); qJoy.classList.add('is-active');
       qJoy.className = 'quick-joystick-wrap is-active'; qKnob.className = 'quick-joystick-knob';
 
@@ -431,6 +483,9 @@
       } else if (mode === 'ljoy') {
         qJoy.classList.add('yellow-theme'); qKnob.classList.add('yellow-theme');
         qKnob.style.transform = `translate(${state.lightJoyX}px, ${state.lightJoyY}px)`;
+      } else if (mode === 'gjoy') {
+        qJoy.classList.add('purple-theme'); qKnob.classList.add('purple-theme');
+        qKnob.style.transform = `translate(${state.globalLightX}px, ${state.globalLightY}px)`;
       } else {
         qKnob.style.transform = `translate(${state.wallShadowX / 1.5}px, ${state.wallShadowY / 1.5}px)`;
       }
@@ -470,6 +525,7 @@
       video.srcObject = cameraStream;
     } catch (err) { alert("カメラ起動失敗: " + err.message); }
   }
+
   function stopCamera() {
     if (cameraStream) { cameraStream.getTracks().forEach(track => track.stop()); cameraStream = null; video.srcObject = null; }
   }
@@ -511,15 +567,25 @@
     const bgFilter = `brightness(${state.bgBright}%) blur(${state.bgBlur}px)`;
     video.style.transform = bgTransform; video.style.filter = bgFilter;
     bgImg.style.transform = bgTransform; bgImg.style.filter = bgFilter;
+    bgColorPreview.style.backgroundColor = state.bgColor;
+
+    // 背景全体への環境光グラデーション
+    if (state.globalLightActive) {
+      bgLightOverlay.style.opacity = 1;
+      const angleRad = Math.atan2(state.globalLightY, state.globalLightX);
+      const angleDeg = (angleRad * 180 / Math.PI) + 90;
+      const dist = Math.min(1, Math.sqrt(state.globalLightX**2 + state.globalLightY**2) / 26);
+      bgLightOverlay.style.background = `linear-gradient(${angleDeg}deg, rgba(255,255,255,${dist*0.4}) 0%, rgba(0,0,0,0) 50%, rgba(0,0,0,${dist*0.5}) 100%)`;
+    } else {
+      bgLightOverlay.style.opacity = 0;
+    }
 
     overlayContainer.style.left = state.oshiX + 'px';
     overlayContainer.style.top = state.oshiY + 'px';
     overlayContainer.style.transform = `translate(-50%, -50%) rotateZ(${state.rotZ}deg) scale(${state.size / 100})`;
     
-    // ★ ベースの明るさは「画像本体」だけに適用（分離）
     mainImg.style.filter = `brightness(${state.bright}%)`;
     
-    // ★ 壁影は「ラッパー」にかける
     if (state.wallShadow) {
       const blur = Math.sqrt(state.wallShadowX**2 + state.wallShadowY**2) * 0.8;
       mainWrapper.style.filter = `drop-shadow(${state.wallShadowX}px ${state.wallShadowY}px ${blur}px rgba(0,0,0,${state.wallShadowOp/100}))`;
@@ -527,7 +593,6 @@
       mainWrapper.style.filter = 'none';
     }
 
-    // ★ ライティング（ベースの明るさに影響されず、ハードライトで強く光る！）
     if (state.lighting) {
       lightOverlay.style.opacity = 1;
       const angleRad = Math.atan2(state.lightJoyY, state.lightJoyX);
@@ -581,12 +646,21 @@
     
     qKnob.style.transform = `translate(${dx}px, ${dy}px)`;
 
-    if (activeMode === 'fjoy') {
-      state.floorShadowJoyX = dx; state.floorShadowJoyY = dy;
-    } else if (activeMode === 'ljoy') {
+    if (activeMode === 'gjoy') {
+      state.globalLightActive = true;
+      state.globalLightX = dx; state.globalLightY = dy;
       state.lightJoyX = dx; state.lightJoyY = dy;
-    } else {
-      state.wallShadowX = dx * 1.5; state.wallShadowY = dy * 1.5;
+      state.floorShadowJoyX = -dx; state.floorShadowJoyY = -dy;
+      state.wallShadowX = -dx * 1.5; state.wallShadowY = -dy * 1.5;
+      if(!state.lighting) setLighting(true);
+      if(!state.floorShadow) setFloorShadow(true);
+      if(!state.wallShadow) setWallShadow(true);
+    } 
+    else {
+      state.globalLightActive = false;
+      if (activeMode === 'fjoy') { state.floorShadowJoyX = dx; state.floorShadowJoyY = dy; }
+      else if (activeMode === 'ljoy') { state.lightJoyX = dx; state.lightJoyY = dy; }
+      else { state.wallShadowX = dx * 1.5; state.wallShadowY = dy * 1.5; }
     }
     updateStyles();
   }
@@ -639,24 +713,20 @@
       ctx.restore();
     }
 
-    // ★ 描画用の一時キャンバスを作成して、ライティングをキレイに合成する
     const charCanvas = document.createElement('canvas');
     charCanvas.width = origW; charCanvas.height = origH;
     const cCtx = charCanvas.getContext('2d');
 
-    // ベースの明るさだけを適用してキャラを描画
     cCtx.filter = `brightness(${state.bright}%)`;
     cCtx.drawImage(mainImg, 0, 0, origW, origH);
 
-    // ライティング (ハードライト合成)
     if (state.lighting) {
       const gradCanvas = document.createElement('canvas');
       gradCanvas.width = origW; gradCanvas.height = origH;
       const gCtx = gradCanvas.getContext('2d');
       
-      // キャラクターの形を作る
       gCtx.drawImage(mainImg, 0, 0, origW, origH);
-      gCtx.globalCompositeOperation = 'source-in'; // 塗りをキャラの形に限定する
+      gCtx.globalCompositeOperation = 'source-in';
       
       const angleRad = Math.atan2(state.lightJoyY, state.lightJoyX);
       const intensity = Math.min(1, Math.sqrt(state.lightJoyX**2 + state.lightJoyY**2) / 26);
@@ -679,12 +749,10 @@
       gCtx.fillStyle = grad;
       gCtx.fillRect(0, 0, origW, origH);
 
-      // 一時キャンバスにハードライトで重ね合わせ！
       cCtx.globalCompositeOperation = 'hard-light';
       cCtx.drawImage(gradCanvas, 0, 0, origW, origH);
     }
 
-    // 完成したキャラをメインキャンバスへ (壁影と一緒に)
     ctx.save();
     if (state.wallShadow) {
       const blur = Math.sqrt(state.wallShadowX**2 + state.wallShadowY**2) * 0.8;
@@ -714,20 +782,47 @@
 
     ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
 
-    const source = state.bgMode === 'camera' ? video : bgImg;
-    const srcW = state.bgMode === 'camera' ? video.videoWidth : bgImg.naturalWidth;
-    const srcH = state.bgMode === 'camera' ? video.videoHeight : bgImg.naturalHeight;
+    // 背景の描画
+    if (state.bgMode === 'color') {
+      ctx.save();
+      ctx.fillStyle = state.bgColor;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.restore();
+    } else {
+      const source = state.bgMode === 'camera' ? video : bgImg;
+      const srcW = state.bgMode === 'camera' ? video.videoWidth : bgImg.naturalWidth;
+      const srcH = state.bgMode === 'camera' ? video.videoHeight : bgImg.naturalHeight;
 
-    const sRatio = vw / vh; const srcRatio = srcW / srcH;
-    let dW, dH;
-    if (srcRatio > sRatio) { dH = vh; dW = vh * srcRatio; } else { dW = vw; dH = vw / srcRatio; }
+      const sRatio = vw / vh; const srcRatio = srcW / srcH;
+      let dW, dH;
+      if (srcRatio > sRatio) { dH = vh; dW = vh * srcRatio; } else { dW = vw; dH = vw / srcRatio; }
 
-    ctx.save();
-    ctx.translate((vw * dpr) / 2 + state.bgX * dpr, (vh * dpr) / 2 + state.bgY * dpr);
-    ctx.scale(state.bgZoom, state.bgZoom);
-    ctx.filter = `brightness(${state.bgBright}%) blur(${state.bgBlur * dpr}px)`;
-    ctx.drawImage(source, (-dW / 2) * dpr, (-dH / 2) * dpr, dW * dpr, dH * dpr);
-    ctx.restore();
+      ctx.save();
+      ctx.translate((vw * dpr) / 2 + state.bgX * dpr, (vh * dpr) / 2 + state.bgY * dpr);
+      ctx.scale(state.bgZoom, state.bgZoom);
+      ctx.filter = `brightness(${state.bgBright}%) blur(${state.bgBlur * dpr}px)`;
+      ctx.drawImage(source, (-dW / 2) * dpr, (-dH / 2) * dpr, dW * dpr, dH * dpr);
+      ctx.restore();
+    }
+
+    // グローバル環境光の書き込み
+    if (state.globalLightActive) {
+      ctx.save();
+      const angleRad = Math.atan2(state.globalLightY, state.globalLightX);
+      const dist = Math.min(1, Math.sqrt(state.globalLightX**2 + state.globalLightY**2) / 26);
+      const x1 = (vw * dpr)/2 - Math.cos(angleRad) * (vw * dpr)/2;
+      const y1 = (vh * dpr)/2 - Math.sin(angleRad) * (vh * dpr)/2;
+      const x2 = (vw * dpr)/2 + Math.cos(angleRad) * (vw * dpr)/2;
+      const y2 = (vh * dpr)/2 + Math.sin(angleRad) * (vh * dpr)/2;
+      const bgGrad = ctx.createLinearGradient(x1, y1, x2, y2);
+      bgGrad.addColorStop(0, `rgba(255,255,255,${dist*0.4})`);
+      bgGrad.addColorStop(0.5, `rgba(0,0,0,0)`);
+      bgGrad.addColorStop(1, `rgba(0,0,0,${dist*0.5})`);
+      ctx.fillStyle = bgGrad;
+      ctx.globalCompositeOperation = 'overlay';
+      ctx.fillRect(0, 0, vw*dpr, vh*dpr);
+      ctx.restore();
+    }
 
     ctx.save();
     ctx.translate(state.oshiX * dpr, state.oshiY * dpr);
