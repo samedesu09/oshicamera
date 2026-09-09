@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Neon AR Camera</title>
+<title>Neon AR Camera - Pro</title>
 <meta name="theme-color" content="#060309">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <style>
@@ -12,268 +12,547 @@
     width: 100vw; height: 100vh; overflow: hidden;
     background-color: #000; color: #fff;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    position: relative;
   }
 
-  /* カメラの映像を画面いっぱいに */
+  /* カメラ映像 */
   #camera-preview {
     position: absolute; top: 0; left: 0; width: 100%; height: 100%;
     object-fit: cover; z-index: 1;
   }
 
-  /* 重ねる画像（ドラッグ可能） */
-  #overlay-img {
+  /* 合成用画像（コンテナ） */
+  #overlay-container {
     position: absolute; top: 50%; left: 50%;
-    transform: translate(-50%, -50%); /* 初期位置 */
-    max-width: 80vw; display: none; z-index: 5;
+    transform: translate(-50%, -50%);
+    display: none; z-index: 5;
     touch-action: none; cursor: grab;
-    filter: drop-shadow(0 0 10px rgba(0,230,255,0.3));
   }
-  #overlay-img:active { cursor: grabbing; }
+  #overlay-container:active { cursor: grabbing; }
 
-  /* 下部のコントロールパネル */
-  .control-panel {
-    position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
-    width: 92%; max-width: 400px; padding: 16px;
-    background: rgba(12, 8, 16, 0.7); backdrop-filter: blur(12px);
-    border: 1px solid rgba(0, 230, 255, 0.3); border-radius: 16px;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.5), inset 0 0 15px rgba(0, 230, 255, 0.1);
-    z-index: 10; display: flex; flex-direction: column; gap: 12px;
+  /* 床影用（足元支点） */
+  #floor-shadow-img {
+    position: absolute; bottom: 0; left: 0; width: 100%; height: 100%;
+    transform-origin: bottom center; pointer-events: none; display: none;
+  }
+  
+  /* メイン画像 */
+  #main-overlay-img {
+    position: relative; width: 100%; height: 100%; display: block;
+    pointer-events: none; z-index: 2;
   }
 
-  .control-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-  .label { font-size: 0.65rem; color: #00e6ff; letter-spacing: 0.1em; width: 45px; }
+  /* シャッターボタン (中央下) */
+  .shutter-btn-wrapper {
+    position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
+    z-index: 10; display: flex; align-items: center; justify-content: center;
+  }
+  .shutter-btn {
+    width: 70px; height: 70px; border-radius: 50%;
+    background: rgba(0, 230, 255, 0.2); border: 3px solid #00e6ff;
+    box-shadow: 0 0 15px rgba(0, 230, 255, 0.5), inset 0 0 10px rgba(0, 230, 255, 0.3);
+    cursor: pointer; display: flex; justify-content: center; align-items: center;
+    transition: 0.1s; outline: none;
+  }
+  .shutter-btn:active { background: #00e6ff; box-shadow: 0 0 25px #00e6ff; transform: scale(0.92); }
+  .shutter-inner {
+    width: 54px; height: 54px; border-radius: 50%; background: #fff;
+    box-shadow: inset 0 0 5px rgba(0,0,0,0.5);
+  }
+  .shutter-btn:active .shutter-inner { background: #000; }
 
-  /* スライダー */
-  input[type="range"] { flex: 1; appearance: none; height: 4px; background: rgba(255,255,255,0.2); border-radius: 2px; outline: none; }
+  /* メニューボタン (右下) */
+  .menu-toggle-btn {
+    position: absolute; bottom: 40px; right: 30px; z-index: 10;
+    width: 50px; height: 50px; border-radius: 12px;
+    background: rgba(12, 8, 16, 0.6); backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.2); color: #fff;
+    font-size: 1.5rem; cursor: pointer; transition: 0.2s; outline: none;
+    display: flex; justify-content: center; align-items: center;
+  }
+  .menu-toggle-btn:active { transform: scale(0.9); }
+
+  /* サイドパネル */
+  .side-panel {
+    position: absolute; top: 0; right: 0; width: 320px; height: 100vh;
+    background: rgba(12, 8, 16, 0.85); backdrop-filter: blur(16px);
+    border-left: 1px solid rgba(255, 255, 255, 0.15); z-index: 100;
+    transform: translateX(100%); transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+    display: flex; flex-direction: column; padding: 24px 20px; gap: 16px; overflow-y: auto;
+  }
+  .side-panel.is-open { transform: translateX(0); }
+  
+  .panel-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 12px; }
+  .panel-title { font-size: 0.9rem; font-weight: bold; letter-spacing: 0.1em; color: #fff; }
+  .close-btn { background: none; border: none; color: #aaa; font-size: 1.5rem; cursor: pointer; padding: 0 10px; }
+
+  .control-group { display: flex; flex-direction: column; gap: 6px; }
+  .label-row { display: flex; justify-content: space-between; align-items: center; }
+  .label { font-size: 0.65rem; color: #8a8190; letter-spacing: 0.05em; font-weight: bold; }
+  .val-text { font-size: 0.65rem; color: #00e6ff; font-family: monospace; }
+
+  input[type="range"] { appearance: none; width: 100%; height: 4px; background: rgba(255,255,255,0.15); border-radius: 2px; outline: none; margin: 8px 0; }
   input[type="range"]::-webkit-slider-thumb {
-    appearance: none; width: 16px; height: 16px; border-radius: 50%;
-    background: #00e6ff; box-shadow: 0 0 8px #00e6ff; cursor: pointer;
+    appearance: none; width: 18px; height: 18px; border-radius: 50%;
+    background: #00e6ff; box-shadow: 0 0 10px rgba(0, 230, 255, 0.6); cursor: pointer;
+  }
+  
+  /* ピンク系ボタンスタイル（床影用） */
+  input.pink-slider::-webkit-slider-thumb {
+    background: #ff2a6d; box-shadow: 0 0 10px rgba(255, 42, 109, 0.6);
   }
 
-  /* ボタン類 */
-  .btn {
-    padding: 10px 15px; border-radius: 8px; font-size: 0.8rem; font-weight: bold; letter-spacing: 0.05em;
-    cursor: pointer; text-align: center; transition: 0.2s; border: none; outline: none;
+  .btn-action {
+    padding: 12px; border-radius: 8px; font-size: 0.8rem; font-weight: bold; cursor: pointer;
+    width: 100%; text-align: center; border: none; outline: none; transition: 0.2s;
   }
-  .btn-pink { background: rgba(255, 42, 109, 0.15); border: 1px dashed #ff2a6d; color: #ff758c; }
-  .btn-pink:hover { background: rgba(255, 42, 109, 0.3); box-shadow: 0 0 12px rgba(255, 42, 109, 0.5); }
-  
-  /* シャッターボタン */
-  .btn-shutter {
-    width: 100%; padding: 14px; background: rgba(0, 230, 255, 0.15); border: 1px solid #00e6ff; color: #00e6ff;
-    font-size: 1.1rem; box-shadow: 0 0 15px rgba(0, 230, 255, 0.3);
-  }
-  .btn-shutter:hover, .btn-shutter:active { background: #00e6ff; color: #000; box-shadow: 0 0 25px #00e6ff; }
+  .btn-upload { background: rgba(255, 42, 109, 0.15); border: 1px dashed #ff2a6d; color: #ff758c; margin-bottom: 5px; }
+  .btn-upload:active { background: rgba(255, 42, 109, 0.3); }
 
-  /* 合成用の非表示キャンバス */
-  #capture-canvas { display: none; }
-  
-  /* 画面フラッシュ */
+  .btn-export { background: rgba(0, 230, 255, 0.15); border: 1px dashed #00e6ff; color: #00e6ff; margin-bottom: 10px; }
+  .btn-export:active { background: rgba(0, 230, 255, 0.3); }
+
+  .toggle-row { display: flex; gap: 8px; }
+  .toggle-btn {
+    flex: 1; padding: 8px 0; background: rgba(255,255,255,0.05); border: 1px solid transparent;
+    color: #888; font-size: 0.75rem; border-radius: 6px; cursor: pointer; transition: 0.2s;
+  }
+  .toggle-btn.active.blue { background: rgba(0, 230, 255, 0.2); border-color: #00e6ff; color: #fff; box-shadow: 0 0 10px rgba(0,230,255,0.3); }
+  .toggle-btn.active.pink { background: rgba(255, 42, 109, 0.2); border-color: #ff2a6d; color: #fff; box-shadow: 0 0 10px rgba(255,42,109,0.3); }
+
+  /* アナログスティック */
+  .joystick-container {
+    width: 120px; height: 120px; border-radius: 50%; margin: 10px auto;
+    background: rgba(255, 255, 255, 0.05); border: 2px solid rgba(0, 230, 255, 0.2);
+    position: relative; display: flex; justify-content: center; align-items: center;
+    touch-action: none; box-shadow: inset 0 0 20px rgba(0,0,0,0.5);
+  }
+  .joystick-knob {
+    width: 36px; height: 36px; border-radius: 50%; position: absolute;
+    background: #00e6ff; box-shadow: 0 0 15px #00e6ff; cursor: grab;
+    transition: transform 0.05s ease-out;
+  }
+  .joystick-knob:active { cursor: grabbing; }
+
   #flash {
     position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-    background: #fff; z-index: 100; opacity: 0; pointer-events: none;
-    transition: opacity 0.1s ease-out;
+    background: #fff; z-index: 200; opacity: 0; pointer-events: none; transition: opacity 0.1s ease-out;
   }
+  #capture-canvas { display: none; }
 </style>
 </head>
 <body>
 
 <video id="camera-preview" autoplay playsinline></video>
-<img id="overlay-img" src="" alt="overlay">
+
+<!-- 影とメイン画像をまとめるコンテナ -->
+<div id="overlay-container">
+  <img id="floor-shadow-img" src="" alt="floor-shadow">
+  <img id="main-overlay-img" src="" alt="overlay">
+</div>
+
 <div id="flash"></div>
+
 <input type="file" id="image-loader" accept="image/png, image/jpeg, image/gif" style="display: none;">
 
-<div class="control-panel">
-  <button class="btn btn-pink" onclick="document.getElementById('image-loader').click()">＋ 透過画像を読み込む</button>
-  
-  <div class="control-row">
-    <div class="label">SIZE</div>
-    <input type="range" id="size-slider" min="10" max="200" value="100">
+<div class="shutter-btn-wrapper">
+  <button class="shutter-btn" onclick="takePhoto()"><div class="shutter-inner"></div></button>
+</div>
+<button class="menu-toggle-btn" onclick="toggleMenu()">⚙️</button>
+
+<div class="side-panel" id="side-menu">
+  <div class="panel-header">
+    <div class="panel-title">IMAGE SETTINGS</div>
+    <button class="close-btn" onclick="toggleMenu()">×</button>
   </div>
   
-  <div class="control-row">
-    <div class="label">TRANS</div>
-    <input type="range" id="opacity-slider" min="0" max="100" value="100">
+  <button class="btn-action btn-upload" onclick="document.getElementById('image-loader').click()">＋ 透過画像を選択</button>
+  <button class="btn-action btn-export" onclick="exportTransformedImage()">💾 高画質で透過PNG保存</button>
+
+  <div class="control-group">
+    <div class="label-row"><div class="label">SIZE (大きさ)</div><div class="val-text" id="val-size">100%</div></div>
+    <input type="range" id="sl-size" min="10" max="250" value="100">
   </div>
 
-  <button class="btn btn-shutter" onclick="takePhoto()">📸 撮影して保存</button>
+  <div class="control-group">
+    <div class="label-row"><div class="label">ANGLE (回転)</div><div class="val-text" id="val-rot">0°</div></div>
+    <input type="range" id="sl-rot" min="-180" max="180" value="0">
+  </div>
+
+  <div class="control-group">
+    <div class="label-row"><div class="label">BRIGHTNESS (明るさ)</div><div class="val-text" id="val-bright">100%</div></div>
+    <input type="range" id="sl-bright" min="0" max="200" value="100">
+  </div>
+
+  <!-- 床影 (FLOOR SHADOW) 設定 -->
+  <hr style="border:0; border-top:1px dashed rgba(255, 42, 109, 0.3); margin: 8px 0;">
+  
+  <div class="control-group">
+    <div class="label" style="color: #ff758c;">FLOOR SHADOW (床影)</div>
+    <div class="toggle-row">
+      <button class="toggle-btn pink" id="btn-fshadow-on" onclick="setFloorShadow(true)">ON</button>
+      <button class="toggle-btn pink active" id="btn-fshadow-off" onclick="setFloorShadow(false)">OFF</button>
+    </div>
+  </div>
+
+  <div class="control-group" id="fshadow-controls" style="display: none; opacity: 0; transition: 0.3s;">
+    <div class="label-row"><div class="label">LENGTH (奥・手前への長さ)</div><div class="val-text" id="val-fsh-len">-80%</div></div>
+    <input type="range" class="pink-slider" id="sl-fsh-len" min="-200" max="200" value="-80">
+    
+    <div class="label-row" style="margin-top: 8px;"><div class="label">ANGLE (左右の傾き)</div><div class="val-text" id="val-fsh-ang">20°</div></div>
+    <input type="range" class="pink-slider" id="sl-fsh-ang" min="-80" max="80" value="20">
+    
+    <div class="label-row" style="margin-top: 8px;"><div class="label">BLUR (ぼかし具合)</div><div class="val-text" id="val-fsh-blur">5px</div></div>
+    <input type="range" class="pink-slider" id="sl-fsh-blur" min="0" max="50" value="5">
+
+    <div class="label-row" style="margin-top: 8px;"><div class="label">OPACITY (濃さ)</div><div class="val-text" id="val-fsh-op">60%</div></div>
+    <input type="range" class="pink-slider" id="sl-fsh-op" min="0" max="100" value="60">
+  </div>
+
+  <!-- 壁影 (WALL SHADOW) 設定 -->
+  <hr style="border:0; border-top:1px dashed rgba(0, 230, 255, 0.3); margin: 8px 0;">
+
+  <div class="control-group">
+    <div class="label">WALL SHADOW (壁影/ドロップシャドウ)</div>
+    <div class="toggle-row">
+      <button class="toggle-btn blue" id="btn-shadow-on" onclick="setWallShadow(true)">ON</button>
+      <button class="toggle-btn blue active" id="btn-shadow-off" onclick="setWallShadow(false)">OFF</button>
+    </div>
+  </div>
+
+  <div class="control-group" id="shadow-controls" style="display: none; opacity: 0; transition: 0.3s;">
+    <div class="label-row" style="margin-top: 8px;"><div class="label">SHADOW OPACITY (濃さ)</div><div class="val-text" id="val-sh-op">50%</div></div>
+    <input type="range" id="sl-sh-op" min="0" max="100" value="50">
+    
+    <div class="label-row" style="margin-top: 8px;"><div class="label">DIRECTION (方向と距離)</div></div>
+    <div class="joystick-container" id="joy-container">
+      <div class="joystick-knob" id="joy-knob"></div>
+    </div>
+  </div>
 </div>
 
 <canvas id="capture-canvas"></canvas>
 
 <script>
   const video = document.getElementById('camera-preview');
-  const overlayImg = document.getElementById('overlay-img');
-  const sizeSlider = document.getElementById('size-slider');
-  const opacitySlider = document.getElementById('opacity-slider');
+  const overlayContainer = document.getElementById('overlay-container');
+  const mainImg = document.getElementById('main-overlay-img');
+  const floorImg = document.getElementById('floor-shadow-img');
   const fileInput = document.getElementById('image-loader');
   
-  // ==========================================
-  // 1. カメラの起動（高画質化の指定を追加！）
-  // ==========================================
+  let state = {
+    size: 100, rotZ: 0, bright: 100,
+    wallShadow: false, wallShadowOp: 50, wallShadowX: 15, wallShadowY: 15,
+    floorShadow: false, floorShadowOp: 60, floorShadowLen: -80, floorShadowAngle: 20, floorShadowBlur: 5
+  };
+
+  function toggleMenu() { document.getElementById('side-menu').classList.toggle('is-open'); }
+
   async function startCamera() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { 
-          facingMode: 'environment',
-          // ★フルHD以上の高解像度をブラウザに要求！
-          width: { ideal: 1920 },
-          height: { ideal: 1080 }
-        },
-        audio: false
+        video: { facingMode: 'environment', width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false
       });
       video.srcObject = stream;
-    } catch (err) {
-      alert("カメラの起動に失敗しました。\nエラー: " + err.message);
-    }
+    } catch (err) { alert("カメラの起動に失敗しました。\n" + err.message); }
   }
   window.addEventListener('load', startCamera);
 
-  // ==========================================
-  // 2. 画像の読み込みと表示
-  // ==========================================
-  let baseWidth = 0;
-  
   fileInput.addEventListener('change', (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    
     const reader = new FileReader();
     reader.onload = (event) => {
-      overlayImg.src = event.target.result;
-      overlayImg.style.display = 'block';
+      mainImg.src = event.target.result;
+      floorImg.src = event.target.result;
+      overlayContainer.style.display = 'block';
       
-      overlayImg.onload = () => {
-        baseWidth = overlayImg.naturalWidth;
+      mainImg.onload = () => {
         const initialWidth = window.innerWidth * 0.5; 
-        overlayImg.style.width = initialWidth + 'px';
-        sizeSlider.value = 100;
-        opacitySlider.value = 100;
-        overlayImg.style.opacity = 1;
-        
-        overlayImg.style.left = '50%';
-        overlayImg.style.top = '50%';
-        overlayImg.style.transform = 'translate(-50%, -50%)';
+        overlayContainer.style.width = initialWidth + 'px';
+        overlayContainer.style.height = (mainImg.naturalHeight * (initialWidth / mainImg.naturalWidth)) + 'px';
+        overlayContainer.style.left = '50%';
+        overlayContainer.style.top = '50%';
+        resetState();
       };
     };
     reader.readAsDataURL(file);
   });
 
-  // ==========================================
-  // 3. スライダー操作
-  // ==========================================
-  sizeSlider.addEventListener('input', (e) => {
-    const scale = e.target.value / 100;
-    overlayImg.style.width = (window.innerWidth * 0.5 * scale) + 'px';
-  });
-  opacitySlider.addEventListener('input', (e) => {
-    overlayImg.style.opacity = e.target.value / 100;
-  });
+  function updateImageStyle() {
+    // コンテナ全体の回転とサイズ
+    overlayContainer.style.transform = `translate(-50%, -50%) rotateZ(${state.rotZ}deg) scale(${state.size / 100})`;
+    
+    // メイン画像の明るさと壁影（ドロップシャドウ）
+    let mFilter = `brightness(${state.bright}%)`;
+    if (state.wallShadow) {
+      const a = state.wallShadowOp / 100;
+      const blur = Math.sqrt(state.wallShadowX**2 + state.wallShadowY**2) * 0.8;
+      mFilter += ` drop-shadow(${state.wallShadowX}px ${state.wallShadowY}px ${blur}px rgba(0,0,0,${a}))`;
+    }
+    mainImg.style.filter = mFilter;
 
-  // ==========================================
-  // 4. 画像のドラッグ操作
-  // ==========================================
-  let isDragging = false;
-  let startX, startY;
-  let initialLeft, initialTop;
+    // 床影の適用
+    if (state.floorShadow) {
+      floorImg.style.display = 'block';
+      floorImg.style.transform = `skewX(${state.floorShadowAngle}deg) scaleY(${state.floorShadowLen / 100})`;
+      floorImg.style.filter = `brightness(0) blur(${state.floorShadowBlur}px) opacity(${state.floorShadowOp / 100})`;
+    } else {
+      floorImg.style.display = 'none';
+    }
+  }
 
-  function onDragStart(e) {
-    if (e.target !== overlayImg) return;
+  function bindSlider(id, stateKey, valId, unit) {
+    document.getElementById(id).addEventListener('input', (e) => {
+      state[stateKey] = parseInt(e.target.value);
+      document.getElementById(valId).textContent = state[stateKey] + unit;
+      updateImageStyle();
+    });
+  }
+  
+  // 基本
+  bindSlider('sl-size', 'size', 'val-size', '%');
+  bindSlider('sl-rot', 'rotZ', 'val-rot', '°');
+  bindSlider('sl-bright', 'bright', 'val-bright', '%');
+  // 床影
+  bindSlider('sl-fsh-len', 'floorShadowLen', 'val-fsh-len', '%');
+  bindSlider('sl-fsh-ang', 'floorShadowAngle', 'val-fsh-ang', '°');
+  bindSlider('sl-fsh-blur', 'floorShadowBlur', 'val-fsh-blur', 'px');
+  bindSlider('sl-fsh-op', 'floorShadowOp', 'val-fsh-op', '%');
+  // 壁影
+  bindSlider('sl-sh-op', 'wallShadowOp', 'val-sh-op', '%');
+
+  function setWallShadow(isOn) {
+    state.wallShadow = isOn;
+    document.getElementById('btn-shadow-on').classList.toggle('active', isOn);
+    document.getElementById('btn-shadow-off').classList.toggle('active', !isOn);
+    const ctrls = document.getElementById('shadow-controls');
+    ctrls.style.display = isOn ? 'flex' : 'none';
+    setTimeout(() => { ctrls.style.opacity = isOn ? 1 : 0; }, 10);
+    updateImageStyle();
+  }
+
+  function setFloorShadow(isOn) {
+    state.floorShadow = isOn;
+    document.getElementById('btn-fshadow-on').classList.toggle('active', isOn);
+    document.getElementById('btn-fshadow-off').classList.toggle('active', !isOn);
+    const ctrls = document.getElementById('fshadow-controls');
+    ctrls.style.display = isOn ? 'flex' : 'none';
+    setTimeout(() => { ctrls.style.opacity = isOn ? 1 : 0; }, 10);
+    updateImageStyle();
+  }
+
+  function resetState() {
+    state = { size: 100, rotZ: 0, bright: 100, wallShadow: false, wallShadowOp: 50, wallShadowX: 15, wallShadowY: 15, floorShadow: false, floorShadowOp: 60, floorShadowLen: -80, floorShadowAngle: 20, floorShadowBlur: 5 };
+    ['size','rot','bright','sh-op','fsh-len','fsh-ang','fsh-blur','fsh-op'].forEach(k => {
+      const el = document.getElementById(`sl-${k}`);
+      if(el) el.value = state[k.replace('-','')]; // IDとstateKeyが一部違うので強引だが初期値はHTMLに合わせる
+    });
+    const knob = document.getElementById('joy-knob');
+    knob.style.transform = `translate(15px, 15px)`;
+    setWallShadow(false);
+    setFloorShadow(false);
+  }
+
+  /* --- ジョイスティック (壁影用) --- */
+  const joyContainer = document.getElementById('joy-container');
+  const joyKnob = document.getElementById('joy-knob');
+  let joyActive = false, joyCenterX, joyCenterY;
+  const maxJoyRadius = 40;
+
+  function handleJoyMove(e) {
+    if (!joyActive) return;
     e.preventDefault();
-    isDragging = true;
-    
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    
-    startX = clientX; startY = clientY;
-    
-    const rect = overlayImg.getBoundingClientRect();
-    overlayImg.style.transform = 'none';
-    overlayImg.style.left = rect.left + 'px';
-    overlayImg.style.top = rect.top + 'px';
-    
-    initialLeft = rect.left; initialTop = rect.top;
+    const t = e.touches ? e.touches[0] : e;
+    const rect = joyContainer.getBoundingClientRect();
+    joyCenterX = rect.left + rect.width / 2; joyCenterY = rect.top + rect.height / 2;
+    let dx = t.clientX - joyCenterX; let dy = t.clientY - joyCenterY;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    if (distance > maxJoyRadius) { dx = (dx / distance) * maxJoyRadius; dy = (dy / distance) * maxJoyRadius; }
+    joyKnob.style.transform = `translate(${dx}px, ${dy}px)`;
+    state.wallShadowX = dx; state.wallShadowY = dy;
+    updateImageStyle();
+  }
+  joyContainer.addEventListener('mousedown', (e) => { joyActive = true; handleJoyMove(e); });
+  window.addEventListener('mousemove', handleJoyMove);
+  window.addEventListener('mouseup', () => { joyActive = false; });
+  joyContainer.addEventListener('touchstart', (e) => { joyActive = true; handleJoyMove(e); }, { passive: false });
+  window.addEventListener('touchmove', handleJoyMove, { passive: false });
+  window.addEventListener('touchend', () => { joyActive = false; });
+
+  /* --- 画像のドラッグ処理 --- */
+  let isImgDragging = false, startX, startY, initialLeft, initialTop;
+  function onDragStart(e) {
+    if (!e.target.closest('#overlay-container')) return;
+    e.preventDefault();
+    isImgDragging = true;
+    const t = e.touches ? e.touches[0] : e;
+    startX = t.clientX; startY = t.clientY;
+    initialLeft = parseFloat(overlayContainer.style.left) || window.innerWidth / 2;
+    initialTop = parseFloat(overlayContainer.style.top) || window.innerHeight / 2;
   }
   function onDragMove(e) {
-    if (!isDragging) return;
+    if (!isImgDragging) return;
     e.preventDefault();
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    
-    const dx = clientX - startX; const dy = clientY - startY;
-    overlayImg.style.left = (initialLeft + dx) + 'px';
-    overlayImg.style.top = (initialTop + dy) + 'px';
+    const t = e.touches ? e.touches[0] : e;
+    overlayContainer.style.left = (initialLeft + (t.clientX - startX)) + 'px';
+    overlayContainer.style.top = (initialTop + (t.clientY - startY)) + 'px';
   }
-  function onDragEnd() { isDragging = false; }
-
-  overlayImg.addEventListener('mousedown', onDragStart);
+  function onDragEnd() { isImgDragging = false; }
+  
+  overlayContainer.addEventListener('mousedown', onDragStart);
   window.addEventListener('mousemove', onDragMove);
   window.addEventListener('mouseup', onDragEnd);
-  overlayImg.addEventListener('touchstart', onDragStart, { passive: false });
+  overlayContainer.addEventListener('touchstart', onDragStart, { passive: false });
   window.addEventListener('touchmove', onDragMove, { passive: false });
   window.addEventListener('touchend', onDragEnd);
 
-  // ==========================================
-  // 5. 撮影（高解像度での合成＆ダウンロード）
-  // ==========================================
-  function takePhoto() {
-    if (!overlayImg.src || overlayImg.style.display === 'none') {
-      alert("先に透過画像を読み込んでください！");
-      return;
+
+  /* --- キャンバス描画共通処理 (エクスポート＆撮影) --- */
+  function drawOverlayToCtx(ctx, isExport) {
+    const origW = mainImg.naturalWidth;
+    const origH = mainImg.naturalHeight;
+
+    ctx.rotate(state.rotZ * Math.PI / 180);
+
+    if (isExport) {
+      ctx.scale(state.size / 100, state.size / 100);
+    } else {
+      const baseScale = parseFloat(overlayContainer.style.width) / origW;
+      ctx.scale(baseScale * (state.size / 100), baseScale * (state.size / 100));
     }
 
+    // 床影を描画
+    if (state.floorShadow) {
+      ctx.save();
+      ctx.globalAlpha = state.floorShadowOp / 100;
+      ctx.filter = `brightness(0) blur(${state.floorShadowBlur}px)`;
+      ctx.translate(0, origH / 2); // 足元を支点に
+      const tanAngle = Math.tan(state.floorShadowAngle * Math.PI / 180);
+      ctx.transform(1, 0, tanAngle, state.floorShadowLen / 100, 0, 0);
+      ctx.drawImage(mainImg, -origW / 2, -origH, origW, origH);
+      ctx.restore();
+    }
+
+    // メイン画像を描画
+    ctx.save();
+    let mFilter = `brightness(${state.bright}%)`;
+    if (state.wallShadow) {
+      // キャンバスでのドロップシャドウ
+      const blur = Math.sqrt(state.wallShadowX**2 + state.wallShadowY**2) * 0.8;
+      // エクスポート時はdpr不要、撮影時は縮尺に合わせた影になるように調整
+      const sX = isExport ? state.wallShadowX : state.wallShadowX;
+      const sY = isExport ? state.wallShadowY : state.wallShadowY;
+      mFilter += ` drop-shadow(${sX}px ${sY}px ${blur}px rgba(0,0,0,${state.wallShadowOp/100}))`;
+    }
+    ctx.filter = mFilter;
+    ctx.drawImage(mainImg, -origW / 2, -origH / 2, origW, origH);
+    ctx.restore();
+  }
+
+  /* --- 透明ピクセルを自動トリミングする最強関数 --- */
+  function trimCanvas(canvas) {
+    const ctx = canvas.getContext('2d');
+    const width = canvas.width;
+    const height = canvas.height;
+    const pixels = ctx.getImageData(0, 0, width, height);
+    const l = pixels.data.length;
+    let bound = { top: null, left: null, right: null, bottom: null };
+
+    for (let i = 0; i < l; i += 4) {
+      if (pixels.data[i + 3] !== 0) { // 透明じゃないピクセルを発見
+        let x = (i / 4) % width;
+        let y = Math.floor((i / 4) / width);
+        if (bound.top === null) bound.top = y;
+        if (bound.left === null || x < bound.left) bound.left = x;
+        if (bound.right === null || x > bound.right) bound.right = x;
+        if (bound.bottom === null || y > bound.bottom) bound.bottom = y;
+      }
+    }
+    if (bound.top === null) return canvas; // 全部透明ならそのまま返す
+
+    const trimWidth = bound.right - bound.left + 1;
+    const trimHeight = bound.bottom - bound.top + 1;
+    const trimmed = document.createElement('canvas');
+    trimmed.width = trimWidth;
+    trimmed.height = trimHeight;
+    trimmed.getContext('2d').putImageData(ctx.getImageData(bound.left, bound.top, trimWidth, trimHeight), 0, 0);
+    return trimmed;
+  }
+
+  /* --- 高画質で透過PNG保存 (自動トリミング付き) --- */
+  function exportTransformedImage() {
+    if (!mainImg.src || overlayContainer.style.display === 'none') {
+      alert("画像を読み込んでください！"); return;
+    }
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    
+    // 超巨大なキャンバスを用意して見切れを防ぐ
+    const maxDim = Math.max(mainImg.naturalWidth, mainImg.naturalHeight) * 4;
+    canvas.width = maxDim;
+    canvas.height = maxDim;
+    
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.save();
+    ctx.translate(canvas.width / 2, canvas.height / 2);
+    
+    drawOverlayToCtx(ctx, true);
+    ctx.restore();
+
+    // 余白を自動でトリミング！
+    const finalCanvas = trimCanvas(canvas);
+
+    const link = document.createElement('a');
+    link.href = finalCanvas.toDataURL('image/png');
+    link.download = `high_res_chara_${new Date().getTime()}.png`;
+    document.body.appendChild(link); link.click(); document.body.removeChild(link);
+  }
+
+  /* --- 撮影処理 (背景カメラ ＋ AR合成) --- */
+  function takePhoto() {
+    if (!mainImg.src || overlayContainer.style.display === 'none') {
+      alert("画像を読み込んでください！"); return;
+    }
     const flash = document.getElementById('flash');
-    flash.style.opacity = 1;
-    setTimeout(() => { flash.style.opacity = 0; }, 150);
+    flash.style.opacity = 1; setTimeout(() => { flash.style.opacity = 0; }, 150);
 
     const canvas = document.getElementById('capture-canvas');
     const ctx = canvas.getContext('2d');
-
-    // ★スマホの高精細ディスプレイ（DPR）に合わせてキャンバスの画素数を跳ね上げる！
-    const dpr = window.devicePixelRatio || 2; // 最低でも2倍の解像度を確保
+    const dpr = window.devicePixelRatio || 2;
     const vw = window.innerWidth;
     const vh = window.innerHeight;
-    
-    canvas.width = vw * dpr;
-    canvas.height = vh * dpr;
+    canvas.width = vw * dpr; canvas.height = vh * dpr;
 
-    const videoRatio = video.videoWidth / video.videoHeight;
-    const screenRatio = vw / vh;
-    let drawW, drawH, drawX, drawY;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
 
-    if (videoRatio > screenRatio) {
-      drawH = vh;
-      drawW = vh * videoRatio;
-      drawX = (vw - drawW) / 2;
-      drawY = 0;
-    } else {
-      drawW = vw;
-      drawH = vw / videoRatio;
-      drawX = 0;
-      drawY = (vh - drawH) / 2;
-    }
-    
-    // カメラの映像を描画（DPR倍して高精細化）
-    ctx.drawImage(video, drawX * dpr, drawY * dpr, drawW * dpr, drawH * dpr);
+    // カメラ背景を描画
+    const vRatio = video.videoWidth / video.videoHeight;
+    const sRatio = vw / vh;
+    let dW, dH, dX, dY;
+    if (vRatio > sRatio) { dH = vh; dW = vh * vRatio; dX = (vw - dW) / 2; dY = 0; }
+    else { dW = vw; dH = vw / vRatio; dX = 0; dY = (vh - dH) / 2; }
+    ctx.drawImage(video, dX * dpr, dY * dpr, dW * dpr, dH * dpr);
 
-    // 透過画像を重ねて描画（DPR倍して高精細化）
-    const imgRect = overlayImg.getBoundingClientRect();
-    ctx.globalAlpha = overlayImg.style.opacity || 1;
-    ctx.drawImage(overlayImg, imgRect.left * dpr, imgRect.top * dpr, imgRect.width * dpr, imgRect.height * dpr);
+    // キャラクター＆影の描画
+    const rect = overlayContainer.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
 
-    // 最高画質のJPEGとしてダウンロード
-    const dataURL = canvas.toDataURL('image/jpeg', 1.0);
+    ctx.save();
+    ctx.translate(centerX * dpr, centerY * dpr);
+    ctx.scale(dpr, dpr); // 画面のピクセル比率に合わせて拡大
+
+    drawOverlayToCtx(ctx, false);
+    ctx.restore();
+
     const link = document.createElement('a');
-    link.href = dataURL;
-    
-    const now = new Date();
-    const timeStr = `${now.getFullYear()}${(now.getMonth()+1).toString().padStart(2,'0')}${now.getDate().toString().padStart(2,'0')}_${now.getHours()}${now.getMinutes()}${now.getSeconds()}`;
-    link.download = `neon_camera_${timeStr}.jpg`;
-    
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    link.href = canvas.toDataURL('image/jpeg', 1.0);
+    link.download = `ar_camera_${new Date().getTime()}.jpg`;
+    document.body.appendChild(link); link.click(); document.body.removeChild(link);
   }
 </script>
 </body>
